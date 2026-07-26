@@ -87,7 +87,7 @@ def _grid_cell_size_from_miles(world, miles):
 # user subdirectory and a plain basename -- this app is reachable from a
 # browser over the open internet now, so path traversal ("../../whatever")
 # and cross-user file access are blocked by construction, not denylisting.
-WORLDS_DIR = "."
+WORLDS_DIR = os.path.abspath(os.environ.get("MAPGEN_DATA_DIR", "."))
 
 
 def _user_dir(username):
@@ -248,8 +248,10 @@ def _rate_limited(bucket, key):
         return False
 
 
-users: UserStore = None  # set in main()
-invites: InviteStore = None  # set in main()
+os.makedirs(WORLDS_DIR, exist_ok=True)
+users = UserStore(os.path.join(WORLDS_DIR, "users.json"))
+invites = InviteStore(os.path.join(WORLDS_DIR, "invites.json"))
+print(f"User accounts + world files stored under: {WORLDS_DIR}")
 
 # One AppState per logged-in user, created lazily on first access and kept
 # for the life of the process. _registry_lock only guards the dict itself
@@ -1324,21 +1326,17 @@ def api_admin_delete_invite(code):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Multi-user web app for viewing/editing WorldMap .npz files.")
-    parser.add_argument("--data-dir", type=str, default=".",
-                         help="directory to store users.json and each user's own world files under")
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5000)
     return parser.parse_args()
 
 
 def main():
-    global users, invites, WORLDS_DIR
+    # Only for local/dev runs (`python -m webapp.server`) -- WORLDS_DIR/users/
+    # invites are already set up above at import time, since a production
+    # WSGI server (gunicorn) imports this module for its `app` object and
+    # never calls main().
     args = parse_args()
-    WORLDS_DIR = os.path.abspath(args.data_dir)
-    os.makedirs(WORLDS_DIR, exist_ok=True)
-    users = UserStore(os.path.join(WORLDS_DIR, "users.json"))
-    invites = InviteStore(os.path.join(WORLDS_DIR, "invites.json"))
-    print(f"User accounts + world files stored under: {WORLDS_DIR}")
     print(f"Serving on http://{args.host}:{args.port}")
     # threaded=True: each logged-in user gets their own AppState with its own
     # lock, so one user's slow request (e.g. generating a new world) no

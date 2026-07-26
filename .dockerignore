@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+mapgenerator/.git
+dndpython/.git
+data/
+webapp/_local_test_data/
+.env

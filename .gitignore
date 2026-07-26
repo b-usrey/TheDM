@@ -4,4 +4,11 @@ __pycache__/
 
 # Per-user accounts and generated world/scenario files -- created at runtime
 users.json
+invites.json
 users/
+
+# Real secrets -- copy .env.example to .env and fill in real values
+.env
+
+# docker-compose's bind-mounted data directory (MAPGEN_DATA_DIR=/data)
+data/
