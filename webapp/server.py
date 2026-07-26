@@ -13,6 +13,8 @@ import secrets
 import shutil
 import sys
 import threading
+import time
+from collections import defaultdict, deque
 from dataclasses import replace
 
 # mapgen/render and DnDPython's core/data/utils live in the mapgenerator/ and
@@ -211,6 +213,30 @@ register_dnd_routes(app, _user_dir)
 # doesn't require configuring one.
 INVITE_CODE = os.environ.get("MAPGEN_INVITE_CODE")
 
+# Sliding-window rate limit for login/signup -- in-memory only, so it resets
+# on restart and doesn't share state across worker processes, but this app
+# runs as a single process, so that's not a real gap here. Not meant to
+# survive an actual DDoS, just to make password-guessing and username
+# enumeration impractically slow.
+_RATE_LIMIT_WINDOW = 60.0
+_RATE_LIMIT_MAX = 8
+_rate_limit_lock = threading.Lock()
+_rate_limit_hits = defaultdict(deque)
+
+
+def _rate_limited(bucket, key):
+    now = time.time()
+    full_key = (bucket, key)
+    with _rate_limit_lock:
+        hits = _rate_limit_hits[full_key]
+        while hits and now - hits[0] > _RATE_LIMIT_WINDOW:
+            hits.popleft()
+        if len(hits) >= _RATE_LIMIT_MAX:
+            return True
+        hits.append(now)
+        return False
+
+
 users: UserStore = None  # set in main()
 
 # One AppState per logged-in user, created lazily on first access and kept
@@ -270,6 +296,8 @@ def api_auth_me():
 
 @app.route("/api/auth/signup", methods=["POST"])
 def api_auth_signup():
+    if _rate_limited("signup", request.remote_addr):
+        return jsonify({"error": "too many attempts -- wait a minute and try again"}), 429
     body = request.get_json(silent=True) or {}
     if INVITE_CODE and not secrets.compare_digest(str(body.get("invite_code") or ""), INVITE_CODE):
         return jsonify({"error": "invalid invite code"}), 403
@@ -280,7 +308,10 @@ def api_auth_signup():
     if err:
         return jsonify({"error": err}), 400
     if not users.create(username, password):
-        return jsonify({"error": "that username is already taken"}), 409
+        # Deliberately generic, and the same 400 status as the validation
+        # errors above -- a distinct "that username is taken" (409) would
+        # let someone enumerate valid usernames by trying many signups.
+        return jsonify({"error": "couldn't create that account -- try a different username"}), 400
     session["username"] = username
     return jsonify({"username": username})
 
@@ -289,6 +320,8 @@ def api_auth_signup():
 def api_auth_login():
     body = request.get_json(silent=True) or {}
     username, _ = clean_username(body.get("username"))
+    if _rate_limited("login", username or request.remote_addr):
+        return jsonify({"error": "too many attempts -- wait a minute and try again"}), 429
     password = body.get("password") or ""
     if not username or not users.verify(username, password):
         return jsonify({"error": "invalid username or password"}), 401
