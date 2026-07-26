@@ -18,21 +18,21 @@ function showAuthError(formPrefix, msg) {
   e.hidden = false;
 }
 
-async function startApp(username) {
+async function startApp() {
+  // Called right after login/signup, or on page load to check for an
+  // existing session -- always resolves account info (including is_admin)
+  // via /api/auth/me itself, one code path for every entry point. If the
+  // session isn't actually logged in, this just leaves the login form
+  // showing (it's visible by default) instead of showing the app.
+  const meRes = await fetch("/api/auth/me");
+  if (!meRes.ok) return;
+  const me = await meRes.json();
   el("auth-overlay").hidden = true;
   el("app").hidden = false;
-  el("account-username").textContent = username;
+  el("account-username").textContent = me.username;
+  el("admin-link").hidden = !me.is_admin;
   await fetchWorld();
   refreshImage();
-}
-
-async function checkAuth() {
-  const res = await fetch("/api/auth/me");
-  if (res.ok) {
-    const data = await res.json();
-    await startApp(data.username);
-  }
-  // else: leave the login form showing (it's visible by default)
 }
 
 async function handleLogin(e) {
@@ -50,8 +50,7 @@ async function handleLogin(e) {
     showAuthError("login", (await res.json()).error || "login failed");
     return;
   }
-  const data = await res.json();
-  await startApp(data.username);
+  await startApp();
 }
 
 async function handleSignup(e) {
@@ -70,8 +69,7 @@ async function handleSignup(e) {
     showAuthError("signup", (await res.json()).error || "signup failed");
     return;
   }
-  const data = await res.json();
-  await startApp(data.username);
+  await startApp();
 }
 
 async function handleLogout() {
@@ -938,4 +936,4 @@ el("btn-download-map").addEventListener("click", handleDownloadMap);
 el("btn-place-poi").addEventListener("click", handleTogglePlacePOI);
 el("btn-place-settlement").addEventListener("click", handleTogglePlaceSettlement);
 
-checkAuth();
+startApp();

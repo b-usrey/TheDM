@@ -44,6 +44,10 @@ class UserStore:
             return False
         return check_password_hash(record["password_hash"], password)
 
+    def list_usernames(self):
+        with self._lock:
+            return sorted(self._users.keys())
+
 
 def clean_username(raw):
     name = (raw or "").strip().lower()

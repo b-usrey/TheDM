@@ -213,6 +213,16 @@ register_dnd_routes(app, _user_dir)
 # doesn't require configuring one.
 INVITE_CODE = os.environ.get("MAPGEN_INVITE_CODE")
 
+# The one account allowed to see /admin -- unset in local dev, so testing
+# doesn't require configuring one (means no account can reach /admin locally
+# unless this is set, which is fine since there's nothing to administer yet).
+ADMIN_USERNAME = os.environ.get("MAPGEN_ADMIN_USERNAME")
+
+
+def _is_admin():
+    username = session.get("username")
+    return bool(ADMIN_USERNAME) and username == ADMIN_USERNAME
+
 # Sliding-window rate limit for login/signup -- in-memory only, so it resets
 # on restart and doesn't share state across worker processes, but this app
 # runs as a single process, so that's not a real gap here. Not meant to
@@ -278,9 +288,9 @@ def _require_login():
     if request.path == "/" or request.path.startswith("/static/") or request.path.startswith("/api/auth/"):
         return None
     if not session.get("username"):
-        # /dnd/* serves whole HTML pages (not JSON) -- send a logged-out
-        # visitor to the login form instead of dumping raw JSON on them.
-        if request.path == "/dnd" or request.path.startswith("/dnd/"):
+        # /dnd/* and /admin serve whole HTML pages (not JSON) -- send a
+        # logged-out visitor to the login form instead of dumping raw JSON.
+        if request.path == "/dnd" or request.path.startswith("/dnd/") or request.path == "/admin":
             return redirect("/")
         return jsonify({"error": "login required"}), 401
     return None
@@ -291,7 +301,7 @@ def api_auth_me():
     username = session.get("username")
     if not username:
         return jsonify({"error": "not logged in"}), 401
-    return jsonify({"username": username})
+    return jsonify({"username": username, "is_admin": _is_admin()})
 
 
 @app.route("/api/auth/signup", methods=["POST"])
@@ -1204,6 +1214,43 @@ def api_zoom_region():
         region_world.save(path)
         state.use_world(region_world, path)
         return jsonify(_world_snapshot())
+
+
+def _admin_user_stats(username):
+    directory = _user_dir(username)
+    world_files = []
+    total_bytes = 0
+    for name in sorted(os.listdir(directory)):
+        full = os.path.join(directory, name)
+        if not os.path.isfile(full):
+            continue
+        total_bytes += os.path.getsize(full)
+        if name.lower().endswith(".npz"):
+            world_files.append(name)
+    scenarios_dir = os.path.join(directory, "dnd_scenarios")
+    scenario_count = 0
+    if os.path.isdir(scenarios_dir):
+        scenario_count = len([f for f in os.listdir(scenarios_dir) if f.endswith(".json")])
+    return {
+        "username": username,
+        "world_files": world_files,
+        "total_bytes": total_bytes,
+        "scenario_count": scenario_count,
+    }
+
+
+@app.route("/admin")
+def admin_page():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    return send_from_directory(app.static_folder, "admin.html")
+
+
+@app.route("/api/admin/users")
+def api_admin_users():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify({"users": [_admin_user_stats(u) for u in users.list_usernames()]})
 
 
 def parse_args():

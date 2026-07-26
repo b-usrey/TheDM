@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Admin</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .admin-page { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
+  .admin-header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.5rem; }
+  .admin-header h1 { font-size: 1.2rem; margin: 0; }
+  .admin-header a { color: #b0a48f; font-size: 0.85rem; text-decoration: none; margin-left: auto; }
+  .admin-header a:hover { color: #e8e0d0; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th { text-align: left; color: #b0a48f; border-bottom: 1px solid #4a3728; padding: 0.5rem 0.6rem; }
+  td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #33291f; }
+  tr:hover td { background: #2f2820; }
+  .error { color: #ff8a80; }
+</style>
+</head>
+<body style="background:#1c1a17; color:#e8e0d0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; margin:0;">
+<div class="admin-page">
+  <div class="admin-header">
+    <h1>Admin — Accounts</h1>
+    <a href="/">← Back to Map Generator</a>
+  </div>
+  <p id="status" class="muted">Loading…</p>
+  <table id="table" hidden>
+    <thead>
+      <tr><th>Username</th><th>World Files</th><th>Storage</th><th>D&amp;D Scenarios</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<script>
+  function formatBytes(n) {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function load() {
+    const status = document.getElementById("status");
+    const table = document.getElementById("table");
+    const rows = document.getElementById("rows");
+    try {
+      const res = await fetch("/api/admin/users");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        status.textContent = data.error || `Failed to load (${res.status})`;
+        status.classList.add("error");
+        return;
+      }
+      const data = await res.json();
+      rows.innerHTML = data.users.map(u => `
+        <tr>
+          <td>${u.username}</td>
+          <td>${u.world_files.length ? u.world_files.join(", ") : "—"}</td>
+          <td>${formatBytes(u.total_bytes)}</td>
+          <td>${u.scenario_count}</td>
+        </tr>
+      `).join("");
+      status.hidden = true;
+      table.hidden = false;
+    } catch (e) {
+      status.textContent = `Could not reach the server: ${e.message}`;
+      status.classList.add("error");
+    }
+  }
+  document.addEventListener("DOMContentLoaded", load);
+</script>
+</body>
+</html>

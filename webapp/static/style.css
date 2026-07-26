@@ -40,6 +40,20 @@ header h1 {
   border-color: #6a5238;
 }
 
+#admin-link {
+  color: #b0a48f;
+  font-size: 0.85rem;
+  text-decoration: none;
+  border: 1px solid #4a3728;
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+}
+
+#admin-link:hover {
+  color: #e8e0d0;
+  border-color: #6a5238;
+}
+
 #style-label {
   margin-left: auto;
   display: flex;
