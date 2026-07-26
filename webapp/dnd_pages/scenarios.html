@@ -4,40 +4,36 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Scenarios — DnDPython</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet" />
   <style>
-    :root { --ink: #0d0b0e; --parchment: #f2e8d5; --gold: #c9a84c; --gold-dim: #7a5f28; --steel-dark: #111820; --steel-mid: #1e2a38; --glow: rgba(201,168,76,0.18); --glow-hot: rgba(201,168,76,0.45); }
+    :root { --ink: #1c1a17; --parchment: #e8e0d0; --gold: #e8e0d0; --gold-dim: #b0a48f; --steel-dark: #1c1a17; --steel-mid: #241f1a; --glow: rgba(0,0,0,0); --glow-hot: rgba(0,0,0,0); }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--steel-dark); color: var(--parchment); font-family: 'Crimson Pro', Georgia, serif; font-size: 18px; line-height: 1.7; min-height: 100vh; }
-    body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"); background-size: 200px; pointer-events: none; z-index: 0; opacity: 0.5; }
+    body { background: var(--steel-dark); color: var(--parchment); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; line-height: 1.6; min-height: 100vh; }
     .page { max-width: 860px; margin: 0 auto; padding: 2rem; position: relative; z-index: 1; }
-    .page-header { display: flex; align-items: center; gap: 2rem; padding: 2rem 0 1.5rem; border-bottom: 1px solid rgba(201,168,76,0.2); margin-bottom: 2.5rem; }
-    .back-link { font-family: 'Cinzel', serif; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold-dim); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+    .page-header { display: flex; align-items: center; gap: 2rem; padding: 2rem 0 1.5rem; border-bottom: 1px solid #4a3728; margin-bottom: 2.5rem; }
+    .back-link { font-size: 0.75rem; letter-spacing: 0.05em; color: var(--gold-dim); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
     .back-link:hover { color: var(--gold); }
-    .page-title { font-family: 'Cinzel Decorative', serif; font-size: clamp(1.4rem, 4vw, 2.2rem); color: var(--gold); text-shadow: 0 0 30px var(--glow-hot); }
-    .page-subtitle { font-family: 'Cinzel', serif; font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold-dim); margin-top: 0.3rem; }
+    .page-title { font-size: clamp(1.3rem, 4vw, 1.8rem); color: var(--gold); }
+    .page-subtitle { font-size: 0.8rem; letter-spacing: 0.05em; color: var(--gold-dim); margin-top: 0.3rem; }
 
     .scenario-list { display: flex; flex-direction: column; gap: 1.5rem; }
 
-    .scenario-card { background: linear-gradient(160deg, rgba(30,42,56,0.6), rgba(17,24,32,0.8)); border: 1px solid rgba(201,168,76,0.2); border-left: 3px solid var(--gold-dim); padding: 1.5rem; }
+    .scenario-card { background: #241f1a; border: 1px solid #4a3728; border-left: 3px solid var(--gold-dim); padding: 1.5rem; }
 
-    .sc-title { font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--gold); margin-bottom: 0.75rem; }
+    .sc-title { font-size: 1.1rem; font-weight: 600; color: var(--gold); margin-bottom: 0.75rem; }
 
     .sc-meta { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    .sc-tag { font-family: 'Cinzel', serif; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-dim); }
-    .sc-tag span { color: var(--parchment); font-family: 'Crimson Pro', serif; font-size: 0.9rem; letter-spacing: 0; text-transform: none; }
+    .sc-tag { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--gold-dim); }
+    .sc-tag span { color: var(--parchment); font-size: 0.9rem; letter-spacing: 0; text-transform: none; }
 
     .sc-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
-    .sc-party-label { font-family: 'Cinzel', serif; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.3rem; }
+    .sc-party-label { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.3rem; }
     .blue { color: #6ab0e8; } .red { color: #e87070; }
-    .sc-party-entry { color: rgba(242,232,213,0.8); }
+    .sc-party-entry { color: rgba(232,224,208,0.8); }
 
-    .sc-btn { display: inline-block; font-family: 'Cinzel', serif; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; padding: 0.6rem 1.5rem; border: 2px solid var(--gold); background: var(--gold); color: var(--ink); text-decoration: none; transition: all 0.2s; }
-    .sc-btn:hover { background: transparent; color: var(--gold); }
+    .sc-btn { display: inline-block; font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 0.6rem 1.5rem; border-radius: 4px; border: 1px solid #4a3728; background: #3a3228; color: var(--parchment); text-decoration: none; transition: background .2s; }
+    .sc-btn:hover { background: #4a3f30; }
 
-    .loading { text-align: center; color: rgba(242,232,213,0.4); font-style: italic; padding: 4rem 0; }
+    .loading { text-align: center; color: rgba(232,224,208,0.4); font-style: italic; padding: 4rem 0; }
   </style>
 </head>
 <body>

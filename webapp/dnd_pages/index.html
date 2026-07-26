@@ -4,25 +4,22 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Combat Sim — DnDPython</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --ink:        #0d0b0e;
-    --parchment:  #f2e8d5;
-    --gold:       #c9a84c;
-    --gold-dim:   #7a5f28;
-    --steel-dark: #111820;
-    --glow-hot:   rgba(201,168,76,0.45);
+    --ink:        #1c1a17;
+    --parchment:  #e8e0d0;
+    --gold:       #e8e0d0;
+    --gold-dim:   #b0a48f;
+    --steel-dark: #1c1a17;
+    --glow-hot:   rgba(0,0,0,0);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: var(--steel-dark);
     color: var(--parchment);
-    font-family: 'Crimson Pro', Georgia, serif;
-    font-size: 18px;
-    line-height: 1.7;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
     min-height: 100vh;
     display: flex;
     align-items: center;
@@ -34,17 +31,13 @@
     width: 100%;
   }
   h1 {
-    font-family: 'Cinzel Decorative', serif;
-    font-size: clamp(1.6rem, 5vw, 2.4rem);
+    font-size: clamp(1.4rem, 5vw, 2rem);
     color: var(--gold);
-    text-shadow: 0 0 30px var(--glow-hot);
     margin-bottom: 0.5rem;
   }
   .subtitle {
-    font-family: 'Cinzel', serif;
     font-size: 0.85rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    letter-spacing: 0.05em;
     color: var(--gold-dim);
     margin-bottom: 2.5rem;
   }
@@ -56,20 +49,20 @@
   .links a {
     display: block;
     padding: 1.25rem 1.5rem;
-    border: 1px solid rgba(201,168,76,0.3);
+    border: 1px solid #4a3728;
     border-radius: 6px;
+    background: #241f1a;
     color: var(--parchment);
     text-decoration: none;
     transition: border-color .2s, background .2s;
   }
   .links a:hover {
-    border-color: var(--gold);
-    background: rgba(201,168,76,0.08);
+    border-color: #6a5138;
+    background: #2f2820;
   }
   .links a .name {
-    font-family: 'Cinzel', serif;
     font-size: 0.95rem;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.02em;
     color: var(--gold);
     display: block;
     margin-bottom: 0.35rem;
@@ -82,10 +75,8 @@
   .back {
     display: inline-block;
     margin-top: 2.5rem;
-    font-family: 'Cinzel', serif;
     font-size: 0.75rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
+    letter-spacing: 0.05em;
     color: var(--gold-dim);
     text-decoration: none;
   }
