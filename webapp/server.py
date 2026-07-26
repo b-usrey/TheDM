@@ -285,7 +285,7 @@ state = LocalProxy(_get_or_create_state)
 
 @app.before_request
 def _require_login():
-    if request.path == "/" or request.path.startswith("/static/") or request.path.startswith("/api/auth/"):
+    if request.path == "/" or request.path == "/app" or request.path.startswith("/static/") or request.path.startswith("/api/auth/"):
         return None
     username = session.get("username")
     if username and not users.exists(username):
@@ -299,7 +299,7 @@ def _require_login():
         # /dnd/* and /admin serve whole HTML pages (not JSON) -- send a
         # logged-out visitor to the login form instead of dumping raw JSON.
         if request.path == "/dnd" or request.path.startswith("/dnd/") or request.path == "/admin":
-            return redirect("/")
+            return redirect("/app")
         return jsonify({"error": "login required"}), 401
     return None
 
@@ -655,6 +655,11 @@ def _world_snapshot():
 
 
 @app.route("/")
+def landing():
+    return send_from_directory(app.static_folder, "landing.html")
+
+
+@app.route("/app")
 def index():
     return send_from_directory(app.static_folder, "index.html")
 
