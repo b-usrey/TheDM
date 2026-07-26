@@ -38,6 +38,7 @@ from mapgen.settlements import Settlement, Tier
 from mapgen.worldmap import WorldMap, build_world
 from render.render_map import render_legend_to_png_bytes, render_to_png_bytes
 from webapp.dnd_api import register_dnd_routes
+from webapp.invites import InviteStore
 from webapp.users import UserStore, clean_password, clean_username
 
 MAX_NAME_LEN = 63  # settlement/nation names are saved as numpy "U64" -- longer
@@ -248,6 +249,7 @@ def _rate_limited(bucket, key):
 
 
 users: UserStore = None  # set in main()
+invites: InviteStore = None  # set in main()
 
 # One AppState per logged-in user, created lazily on first access and kept
 # for the life of the process. _registry_lock only guards the dict itself
@@ -317,8 +319,15 @@ def api_auth_signup():
     if _rate_limited("signup", request.remote_addr):
         return jsonify({"error": "too many attempts -- wait a minute and try again"}), 429
     body = request.get_json(silent=True) or {}
-    if INVITE_CODE and not secrets.compare_digest(str(body.get("invite_code") or ""), INVITE_CODE):
-        return jsonify({"error": "invalid invite code"}), 403
+    provided_code = str(body.get("invite_code") or "")
+    single_use_code = None
+    if INVITE_CODE:
+        if secrets.compare_digest(provided_code, INVITE_CODE):
+            pass  # the standing code -- reusable, nothing to consume
+        elif invites.is_valid(provided_code):
+            single_use_code = provided_code
+        else:
+            return jsonify({"error": "invalid invite code"}), 403
     username, err = clean_username(body.get("username"))
     if err:
         return jsonify({"error": err}), 400
@@ -330,6 +339,10 @@ def api_auth_signup():
         # errors above -- a distinct "that username is taken" (409) would
         # let someone enumerate valid usernames by trying many signups.
         return jsonify({"error": "couldn't create that account -- try a different username"}), 400
+    if single_use_code:
+        # Consumed only now that the account actually exists -- a typo'd
+        # password earlier must not burn a tester's one-time code.
+        invites.consume(single_use_code, username)
     session["username"] = username
     return jsonify({"username": username})
 
@@ -1284,6 +1297,31 @@ def api_admin_delete_user(username):
     return jsonify({"ok": True})
 
 
+@app.route("/api/admin/invites")
+def api_admin_invites():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify({"invites": invites.list()})
+
+
+@app.route("/api/admin/invites", methods=["POST"])
+def api_admin_create_invite():
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    body = request.get_json(silent=True) or {}
+    note = str(body.get("note") or "")[:MAX_TITLE_LEN]
+    return jsonify({"code": invites.create(note=note)})
+
+
+@app.route("/api/admin/invites/<code>", methods=["DELETE"])
+def api_admin_delete_invite(code):
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    if not invites.delete(code):
+        return jsonify({"error": "no such code"}), 404
+    return jsonify({"ok": True})
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Multi-user web app for viewing/editing WorldMap .npz files.")
     parser.add_argument("--data-dir", type=str, default=".",
@@ -1294,11 +1332,12 @@ def parse_args():
 
 
 def main():
-    global users, WORLDS_DIR
+    global users, invites, WORLDS_DIR
     args = parse_args()
     WORLDS_DIR = os.path.abspath(args.data_dir)
     os.makedirs(WORLDS_DIR, exist_ok=True)
     users = UserStore(os.path.join(WORLDS_DIR, "users.json"))
+    invites = InviteStore(os.path.join(WORLDS_DIR, "invites.json"))
     print(f"User accounts + world files stored under: {WORLDS_DIR}")
     print(f"Serving on http://{args.host}:{args.port}")
     # threaded=True: each logged-in user gets their own AppState with its own

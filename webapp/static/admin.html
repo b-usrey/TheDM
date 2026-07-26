@@ -26,6 +26,30 @@
   }
   .del-btn:hover { background: #6e2828; }
   .row-status { font-size: 0.8rem; color: #b0a48f; margin-left: 0.5rem; }
+  .section-title { font-size: 1rem; margin: 2rem 0 0.75rem; }
+  .invite-form { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; }
+  .invite-form input {
+    flex: 1;
+    padding: 0.4rem 0.5rem;
+    background: #1c1a17;
+    color: #e8e0d0;
+    border: 1px solid #4a3728;
+    border-radius: 4px;
+  }
+  .gen-btn {
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    border: 1px solid #4a3728;
+    background: #3a3228;
+    color: #e8e0d0;
+    cursor: pointer;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .gen-btn:hover { background: #4a3f30; }
+  .code-cell { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; }
+  .used-tag { color: #6f8f6f; font-size: 0.8rem; }
+  .unused-tag { color: #b0a48f; font-size: 0.8rem; }
 </style>
 </head>
 <body style="background:#1c1a17; color:#e8e0d0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; margin:0;">
@@ -40,6 +64,23 @@
       <tr><th>Username</th><th>World Files</th><th>Storage</th><th>D&amp;D Scenarios</th><th></th></tr>
     </thead>
     <tbody id="rows"></tbody>
+  </table>
+
+  <h2 class="section-title">Single-use invite codes</h2>
+  <p class="muted" style="font-size:0.85rem;">
+    Separate from the standing invite code (set via <code>MAPGEN_INVITE_CODE</code>) that everyone else
+    signs up with — each of these works exactly once, for beta testers or one-off invites.
+  </p>
+  <div class="invite-form">
+    <input id="invite-note" type="text" placeholder="Note (optional, e.g. who it's for)" maxlength="80">
+    <button class="gen-btn" onclick="createInvite()">Generate code</button>
+  </div>
+  <p id="invite-status" class="muted">Loading…</p>
+  <table id="invite-table" hidden>
+    <thead>
+      <tr><th>Code</th><th>Note</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody id="invite-rows"></tbody>
   </table>
 </div>
 <script>
@@ -95,7 +136,87 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", load);
+  function formatDate(ts) {
+    return new Date(ts * 1000).toLocaleString();
+  }
+
+  async function loadInvites() {
+    const status = document.getElementById("invite-status");
+    const table = document.getElementById("invite-table");
+    const rows = document.getElementById("invite-rows");
+    try {
+      const res = await fetch("/api/admin/invites");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        status.textContent = data.error || `Failed to load (${res.status})`;
+        status.classList.add("error");
+        return;
+      }
+      const data = await res.json();
+      if (!data.invites.length) {
+        status.textContent = "No single-use codes yet.";
+        table.hidden = true;
+        return;
+      }
+      rows.innerHTML = data.invites.map(inv => `
+        <tr data-code="${inv.code}">
+          <td class="code-cell">${inv.code}</td>
+          <td>${inv.note || "—"}</td>
+          <td>${inv.used_by
+            ? `<span class="used-tag">used by ${inv.used_by} on ${formatDate(inv.used_at)}</span>`
+            : `<span class="unused-tag">unused</span>`}</td>
+          <td>${inv.used_by ? "" : `<button class="del-btn" onclick="deleteInvite('${inv.code}')">Revoke</button>`}</td>
+        </tr>
+      `).join("");
+      status.hidden = true;
+      table.hidden = false;
+    } catch (e) {
+      status.textContent = `Could not reach the server: ${e.message}`;
+      status.classList.add("error");
+    }
+  }
+
+  async function createInvite() {
+    const noteInput = document.getElementById("invite-note");
+    try {
+      const res = await fetch("/api/admin/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: noteInput.value }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || `Failed to create (${res.status})`);
+        return;
+      }
+      const data = await res.json();
+      noteInput.value = "";
+      await loadInvites();
+      alert(`New code: ${data.code}`);
+    } catch (e) {
+      alert(`Could not reach the server: ${e.message}`);
+    }
+  }
+
+  async function deleteInvite(code) {
+    if (!confirm(`Revoke code "${code}"? It can no longer be used to sign up.`)) return;
+    try {
+      const res = await fetch(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || `Failed to revoke (${res.status})`);
+        return;
+      }
+      await loadInvites();
+    } catch (e) {
+      alert(`Could not reach the server: ${e.message}`);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    load();
+    loadInvites();
+  });
 </script>
 </body>
 </html>
