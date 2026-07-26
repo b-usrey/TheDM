@@ -15,6 +15,17 @@
   td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #33291f; }
   tr:hover td { background: #2f2820; }
   .error { color: #ff8a80; }
+  .del-btn {
+    padding: 0.25rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid #7a3030;
+    background: #5a2020;
+    color: #e8e0d0;
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  .del-btn:hover { background: #6e2828; }
+  .row-status { font-size: 0.8rem; color: #b0a48f; margin-left: 0.5rem; }
 </style>
 </head>
 <body style="background:#1c1a17; color:#e8e0d0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; margin:0;">
@@ -26,7 +37,7 @@
   <p id="status" class="muted">Loading…</p>
   <table id="table" hidden>
     <thead>
-      <tr><th>Username</th><th>World Files</th><th>Storage</th><th>D&amp;D Scenarios</th></tr>
+      <tr><th>Username</th><th>World Files</th><th>Storage</th><th>D&amp;D Scenarios</th><th></th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
@@ -52,11 +63,12 @@
       }
       const data = await res.json();
       rows.innerHTML = data.users.map(u => `
-        <tr>
+        <tr data-username="${u.username}">
           <td>${u.username}</td>
           <td>${u.world_files.length ? u.world_files.join(", ") : "—"}</td>
           <td>${formatBytes(u.total_bytes)}</td>
           <td>${u.scenario_count}</td>
+          <td>${u.is_admin ? "" : `<button class="del-btn" onclick="deleteUser('${u.username}')">Delete</button>`}</td>
         </tr>
       `).join("");
       status.hidden = true;
@@ -66,6 +78,23 @@
       status.classList.add("error");
     }
   }
+
+  async function deleteUser(username) {
+    if (!confirm(`Delete account "${username}"? This permanently removes their world files and D&D scenarios. This cannot be undone.`)) return;
+    const row = document.querySelector(`tr[data-username="${username}"]`);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || `Failed to delete (${res.status})`);
+        return;
+      }
+      await load();
+    } catch (e) {
+      alert(`Could not reach the server: ${e.message}`);
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", load);
 </script>
 </body>

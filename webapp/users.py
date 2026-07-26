@@ -48,6 +48,18 @@ class UserStore:
         with self._lock:
             return sorted(self._users.keys())
 
+    def exists(self, username):
+        with self._lock:
+            return username in self._users
+
+    def delete(self, username):
+        with self._lock:
+            if username not in self._users:
+                return False
+            del self._users[username]
+            self._persist()
+            return True
+
 
 def clean_username(raw):
     name = (raw or "").strip().lower()

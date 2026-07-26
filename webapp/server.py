@@ -287,7 +287,15 @@ state = LocalProxy(_get_or_create_state)
 def _require_login():
     if request.path == "/" or request.path.startswith("/static/") or request.path.startswith("/api/auth/"):
         return None
-    if not session.get("username"):
+    username = session.get("username")
+    if username and not users.exists(username):
+        # The account was deleted (e.g. by an admin) while this browser
+        # still had a valid session cookie for it -- without this check,
+        # continuing to browse would silently regenerate a fresh starter
+        # world under the same username instead of actually being logged out.
+        session.clear()
+        username = None
+    if not username:
         # /dnd/* and /admin serve whole HTML pages (not JSON) -- send a
         # logged-out visitor to the login form instead of dumping raw JSON.
         if request.path == "/dnd" or request.path.startswith("/dnd/") or request.path == "/admin":
@@ -1236,6 +1244,7 @@ def _admin_user_stats(username):
         "world_files": world_files,
         "total_bytes": total_bytes,
         "scenario_count": scenario_count,
+        "is_admin": username == ADMIN_USERNAME,
     }
 
 
@@ -1251,6 +1260,23 @@ def api_admin_users():
     if not _is_admin():
         return jsonify({"error": "forbidden"}), 403
     return jsonify({"users": [_admin_user_stats(u) for u in users.list_usernames()]})
+
+
+@app.route("/api/admin/users/<username>", methods=["DELETE"])
+def api_admin_delete_user(username):
+    if not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    if username == ADMIN_USERNAME:
+        return jsonify({"error": "cannot delete the admin account"}), 400
+    # Remove the login first -- if the directory removal below ever fails
+    # partway, we want "can no longer log in" over "still has a valid
+    # password but no data", not the other way around.
+    if not users.delete(username):
+        return jsonify({"error": "no such user"}), 404
+    with _registry_lock:
+        _state_registry.pop(username, None)
+    shutil.rmtree(_user_dir(username), ignore_errors=True)
+    return jsonify({"ok": True})
 
 
 def parse_args():
