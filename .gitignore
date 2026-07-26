@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Per-user accounts and generated world/scenario files -- created at runtime
+users.json
+users/

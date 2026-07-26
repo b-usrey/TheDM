@@ -1,0 +1,415 @@
+"""Flask routes exposing the DnDPython combat simulator (vendored as the
+dndpython/ git submodule) and serving the adapted DnDPython frontend pages
+(webapp/dnd_pages/).
+
+Ported from DnDPython/api.py (a FastAPI app) to plain Flask so it can share
+this app's process, session-based login, and per-user storage instead of
+running as a separate service. Response/error shapes intentionally match
+FastAPI's conventions (HTTPException -> {"detail": ...}) because the adapted
+frontend pages were written against that API and still expect them.
+
+DnDPython's own modules import each other as bare `core.X`/`data.X`/`utils.X`
+(its native style, unchanged from github.com/b-usrey/DnDPython) rather than a
+renamed `dnd.X` -- see server.py's sys.path setup, which is what makes that
+resolve to the submodule instead of colliding with anything of ours.
+"""
+
+import contextlib
+import importlib
+import io
+import json
+import os
+import pkgutil
+import random as _random
+
+from flask import jsonify, request, send_from_directory, session
+
+import data.features
+for _mod in pkgutil.iter_modules(data.features.__path__):
+    if _mod.name != "base":
+        importlib.import_module(f"data.features.{_mod.name}")
+
+from core.combat_manager import CombatManager
+from core.events import EventBus
+from core.InitiativeManager import InitiativeManager
+from data.features.base import Feature
+from data.monsters.monsters import MONSTER_REGISTRY
+from utils.creatureFactory import CreatureFactory
+from utils.scenarioLoader import ScenarioLoader, build_map, place_creatures
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+DND_ROOT = os.path.abspath(os.path.join(_HERE, "..", "dndpython"))
+PAGES_DIR = os.path.join(_HERE, "dnd_pages")
+
+BUNDLED_SCENARIOS_DIR = os.path.join(DND_ROOT, "scenarios")  # shipped samples, read-only
+CLASSES_DIR = os.path.join(DND_ROOT, "data", "classes")
+ITEMS_PATH = os.path.join(DND_ROOT, "data", "items.json")
+
+MAX_EPISODES = 50  # simulate() runs synchronously in the request; keep a single
+                    # request from tying up a worker for too long
+
+
+def _detail_error(message, status=400):
+    return jsonify({"detail": message}), status
+
+
+def _run_episode(scenario_data, silent=True, strategy=None):
+    captured = io.StringIO()
+    ctx = contextlib.redirect_stdout(captured) if silent else contextlib.nullcontext()
+
+    with ctx:
+        event = EventBus()
+        factory = CreatureFactory()
+        loader = ScenarioLoader(factory, event)
+        players, monsters = loader.load(scenario_data)
+
+        monster_idx = 0
+        for tmpl in scenario_data.get("monsters", []):
+            mtype = tmpl.get("type", "").upper()
+            count = tmpl.get("count", 1)
+            role = tmpl.get("weapon_role", "random")
+            if mtype not in MONSTER_REGISTRY:
+                monster_idx += count
+                continue
+            all_attacks = MONSTER_REGISTRY[mtype].get("attacks", [])
+            melee_attacks = [a for a in all_attacks if a.get("attack_type", "melee") == "melee"]
+            ranged_attacks = [a for a in all_attacks if a.get("attack_type", "melee") != "melee"]
+            for _ in range(count):
+                if monster_idx >= len(monsters):
+                    break
+                m = monsters[monster_idx]
+                if role == "all":
+                    m._attack_templates = all_attacks
+                elif role == "melee":
+                    m._attack_templates = melee_attacks or all_attacks
+                elif role == "ranged":
+                    m._attack_templates = ranged_attacks or all_attacks
+                else:
+                    m._attack_templates = _random.choice([melee_attacks, ranged_attacks]) or all_attacks
+                monster_idx += 1
+
+        battle_map = build_map(scenario_data)
+        place_creatures(scenario_data, players, monsters, battle_map)
+        initiative = InitiativeManager(players + monsters, event)
+        max_rounds = scenario_data.get("max_rounds", 100)
+        cm = CombatManager(event, initiative, battle_map, max_rounds=max_rounds)
+        if strategy:
+            from core.ml_strategy import Strategy as StrategyEnum
+            try:
+                cm.ai.current_strategy = StrategyEnum[strategy.upper()]
+            except KeyError:
+                pass
+        outcome = cm.run()
+
+    log = captured.getvalue()
+    outcome_lower = outcome.lower()
+    if "blue" in outcome_lower:
+        winner = "blue"
+    elif "red" in outcome_lower:
+        winner = "red"
+    else:
+        winner = None
+
+    all_creatures = players + monsters
+    summaries = [
+        {
+            "name": c.name,
+            "team": getattr(c, "team", "unknown"),
+            "hp": max(c.hp, 0),
+            "max_hp": c.max_hp,
+            "alive": c.is_alive(),
+        }
+        for c in all_creatures
+    ]
+
+    return {
+        "outcome": outcome,
+        "winner": winner,
+        "rounds": cm.initiative.round,
+        "creatures": summaries,
+        "log": log,
+    }
+
+
+def register_dnd_routes(app, user_dir):
+    """user_dir(username) -> path to that user's own storage directory,
+    same helper server.py already uses for world files."""
+
+    def _user_scenarios_dir(username):
+        path = os.path.join(user_dir(username), "dnd_scenarios")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _find_scenario_path(username, filename):
+        """User-saved scenarios shadow bundled ones of the same name."""
+        safe_name = os.path.basename(filename)
+        user_path = os.path.join(_user_scenarios_dir(username), safe_name)
+        if os.path.exists(user_path):
+            return user_path
+        bundled_path = os.path.join(BUNDLED_SCENARIOS_DIR, safe_name)
+        if os.path.exists(bundled_path):
+            return bundled_path
+        return None
+
+    # ---- Reference data -----------------------------------------------
+
+    @app.route("/api/dnd/classes")
+    def api_dnd_list_classes():
+        results = []
+        for name in sorted(os.listdir(CLASSES_DIR)):
+            if not name.endswith(".json"):
+                continue
+            with open(os.path.join(CLASSES_DIR, name), encoding="utf-8") as f:
+                data = json.load(f)
+            results.append({
+                "name": data["class_name"],
+                "hit_die": data["hit_die"],
+                "saving_throws": data.get("saving_throws", []),
+                "armor_profs": data.get("armor_proficiencies", []),
+                "weapon_profs": data.get("weapon_proficiencies", []),
+                "subclasses": list(data.get("subclasses", {}).keys()),
+                "features_by_level": {
+                    lvl: [f["name"] for f in feats]
+                    for lvl, feats in data.get("features_by_level", {}).items()
+                },
+            })
+        return jsonify({"classes": results})
+
+    @app.route("/api/dnd/classes/<name>")
+    def api_dnd_get_class(name):
+        path = os.path.join(CLASSES_DIR, f"{name.lower()}.json")
+        if not os.path.exists(path):
+            return _detail_error(f"Class '{name}' not found.", 404)
+        with open(path, encoding="utf-8") as f:
+            return jsonify(json.load(f))
+
+    @app.route("/api/dnd/items")
+    def api_dnd_list_items():
+        with open(ITEMS_PATH, encoding="utf-8") as f:
+            raw = json.load(f)
+
+        weapons, armor, trinkets = [], [], []
+        for key, item in raw.items():
+            if key == "comment":
+                continue
+            t = item.get("type", "")
+            if t == "weapon":
+                weapons.append({
+                    "name": item["name"],
+                    "damage_die": item.get("damage_die"),
+                    "damage_type": item.get("damageType"),
+                    "ability": item.get("ability"),
+                    "attack_type": item.get("attack_type"),
+                    "range": f"{item.get('normal_range', 5)}/{item.get('long_range', 5)}",
+                    "properties": item.get("properties", []),
+                    "attack_bonus": item.get("attack_bonus", 0),
+                    "damage_bonus": item.get("damage_bonus", 0),
+                })
+            elif t == "armor":
+                armor.append({
+                    "name": item["name"],
+                    "base_ac": item.get("base_ac"),
+                    "armor_type": item.get("armor_type"),
+                    "magic_bonus": item.get("magic_bonus", 0),
+                })
+            elif t == "trinket":
+                trinkets.append({
+                    "name": item["name"],
+                    "feature": item.get("feature"),
+                    "description": item.get("description", ""),
+                })
+        return jsonify({"weapons": weapons, "armor": armor, "trinkets": trinkets})
+
+    @app.route("/api/dnd/features")
+    def api_dnd_list_features():
+        _CLASS_ONLY = {
+            "Rage", "Reckless Attack", "Danger Sense", "Extra Attack", "Extra Attack II",
+            "Extra Attack III", "Fast Movement", "Feral Instinct", "Brutal Critical",
+            "Brutal Critical II", "Brutal Critical III", "Relentless Rage",
+            "Persistent Rage", "Primal Champion", "Frenzy", "Mindless Rage",
+            "Retaliation", "Bear Totem Spirit", "Lay on Hands", "Divine Smite",
+            "Aura of Protection", "Aura of Courage", "Improved Divine Smite",
+            "Sacred Weapon", "Vow of Enmity", "Soul of Vengeance",
+            "Sneak Attack", "Cunning Action", "Uncanny Dodge", "Evasion",
+            "Slippery Mind", "Elusive", "Stroke of Luck", "Assassinate", "Death Strike",
+            "Eldritch Blast", "Pact Magic", "Agonizing Blast", "Repelling Blast", "Hex",
+            "Dark One's Blessing", "Fiendish Resilience", "Second Wind", "Action Surge",
+            "Action Surge II", "Indomitable", "Indomitable II", "Indomitable III",
+            "Improved Critical", "Superior Critical", "Survivor",
+            "Favored Foe", "Roving", "Feral Senses", "Foe Slayer",
+            "Dread Ambusher", "Iron Mind", "Stalker's Flurry", "Shadowy Dodge",
+            "Nature's Veil", "Land's Stride",
+        }
+        all_names = sorted(Feature.REGISTRY.keys())
+        standalone = [n for n in all_names if n not in _CLASS_ONLY and not n.startswith("ASI")]
+        return jsonify({"all_features": all_names, "standalone_feats": standalone})
+
+    @app.route("/api/dnd/monsters")
+    def api_dnd_list_monsters():
+        return jsonify({"monsters": sorted(MONSTER_REGISTRY.keys())})
+
+    @app.route("/api/dnd/monsters/<name>")
+    def api_dnd_get_monster(name):
+        key = name.upper()
+        if key not in MONSTER_REGISTRY:
+            return _detail_error(f"Monster '{name}' not found.", 404)
+        return jsonify(MONSTER_REGISTRY[key])
+
+    # ---- Scenarios (bundled samples + per-user saved) ------------------
+
+    @app.route("/api/dnd/scenarios")
+    def api_dnd_list_scenarios():
+        username = session["username"]
+        names = set()
+        if os.path.isdir(BUNDLED_SCENARIOS_DIR):
+            names.update(f for f in os.listdir(BUNDLED_SCENARIOS_DIR) if f.endswith(".json"))
+        names.update(f for f in os.listdir(_user_scenarios_dir(username)) if f.endswith(".json"))
+        return jsonify({"scenarios": sorted(names)})
+
+    @app.route("/api/dnd/scenarios/<filename>")
+    def api_dnd_get_scenario(filename):
+        username = session["username"]
+        path = _find_scenario_path(username, filename)
+        if not path:
+            return _detail_error(f"Scenario '{filename}' not found.", 404)
+        with open(path, encoding="utf-8") as f:
+            return jsonify(json.load(f))
+
+    @app.route("/api/dnd/scenarios", methods=["POST"])
+    def api_dnd_save_scenario():
+        username = session["username"]
+        body = request.get_json(silent=True) or {}
+        scenario = body.get("scenario")
+        filename = body.get("filename")
+        overwrite = bool(body.get("overwrite", False))
+        if not isinstance(scenario, dict) or "players" not in scenario or "monsters" not in scenario:
+            return _detail_error("Scenario must contain 'players' and 'monsters' keys.", 422)
+        if not filename:
+            return _detail_error("'filename' is required.", 422)
+        if not filename.endswith(".json"):
+            filename += ".json"
+        safe_name = os.path.basename(filename)
+
+        out_path = os.path.join(_user_scenarios_dir(username), safe_name)
+        if os.path.exists(out_path) and not overwrite:
+            return _detail_error(f"'{safe_name}' already exists. Set overwrite=true to replace it.", 409)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(scenario, f, indent=2)
+        return jsonify({"saved": True, "filename": safe_name, "path": out_path})
+
+    @app.route("/api/dnd/scenarios/<filename>", methods=["DELETE"])
+    def api_dnd_delete_scenario(filename):
+        username = session["username"]
+        safe_name = os.path.basename(filename)
+        path = os.path.join(_user_scenarios_dir(username), safe_name)
+        if not os.path.exists(path):
+            return _detail_error(f"'{safe_name}' not found.", 404)
+        os.remove(path)
+        return jsonify({"deleted": True, "filename": safe_name})
+
+    # ---- Character validation & simulation ------------------------------
+
+    @app.route("/api/dnd/validate-character", methods=["POST"])
+    def api_dnd_validate_character():
+        body = request.get_json(silent=True) or {}
+        player = body.get("player")
+        if not isinstance(player, dict):
+            return _detail_error("Request body must contain a 'player' object.", 422)
+
+        required = ["name", "classes", "stats", "items", "equipped"]
+        missing = [k for k in required if k not in player]
+        if missing:
+            return _detail_error(f"Player definition missing required keys: {missing}", 422)
+
+        test_scenario = {
+            "map": {"width": 10, "height": 10, "walls": [], "difficult_terrain": []},
+            "positions": {player["name"]: [2, 2], "monsters": [[7, 7]]},
+            "players": [player],
+            "monsters": [{"type": "GOBLIN", "count": 1}],
+        }
+
+        buf = io.StringIO()
+        warnings = []
+        try:
+            with contextlib.redirect_stdout(buf):
+                event = EventBus()
+                factory = CreatureFactory()
+                loader = ScenarioLoader(factory, event)
+                players, _ = loader.load(test_scenario)
+                pc = players[0]
+        except Exception as exc:
+            return _detail_error(f"Failed to load character: {exc}", 422)
+
+        log = buf.getvalue()
+        for line in log.splitlines():
+            if "couldn't find" in line.lower() or "not found" in line.lower():
+                warnings.append(line.strip())
+
+        return jsonify({
+            "valid": True,
+            "message": f"HP {pc.max_hp}, AC {pc.ac}",
+            "warnings": warnings,
+            "hp": pc.max_hp,
+            "ac": pc.ac,
+            "features": [f.name for f in pc.features],
+            "log": log,
+        })
+
+    @app.route("/api/dnd/simulate", methods=["POST"])
+    def api_dnd_simulate():
+        username = session["username"]
+        body = request.get_json(silent=True) or {}
+
+        scenario_name = body.get("scenario_name")
+        scenario_data = body.get("scenario")
+        if scenario_name:
+            path = _find_scenario_path(username, scenario_name)
+            if not path:
+                return _detail_error(f"Scenario '{scenario_name}' not found.", 404)
+            with open(path, encoding="utf-8") as f:
+                scenario_data = json.load(f)
+        elif not isinstance(scenario_data, dict):
+            return _detail_error("Provide either 'scenario_name' or 'scenario' in the request body.", 422)
+
+        try:
+            episodes = int(body.get("episodes", 1))
+        except (TypeError, ValueError):
+            episodes = 1
+        n = max(1, min(episodes, MAX_EPISODES))
+        silent = bool(body.get("silent", True))
+        strategy = body.get("strategy")
+
+        wins = {"blue": 0, "red": 0, "none": 0}
+        total_rounds = 0
+        last = {}
+        try:
+            for _ in range(n):
+                last = _run_episode(scenario_data, silent=silent, strategy=strategy)
+                wins[last["winner"] or "none"] += 1
+                total_rounds += last["rounds"]
+        except Exception as exc:
+            return _detail_error(str(exc), 500)
+
+        return jsonify({
+            "episodes_run": n,
+            "wins": wins,
+            "win_rate": wins["blue"] / n if n else 0.0,
+            "avg_rounds": total_rounds / n if n else 0.0,
+            "sample_outcome": last.get("outcome", ""),
+            "creatures": last.get("creatures", []),
+            "log": last.get("log", ""),
+        })
+
+    # ---- Adapted frontend pages -----------------------------------------
+
+    _PAGE_FILES = {"builder", "simulator", "monsters", "scenarios", "classes"}
+
+    @app.route("/dnd")
+    def dnd_landing():
+        return send_from_directory(PAGES_DIR, "index.html")
+
+    @app.route("/dnd/<page>")
+    def dnd_page(page):
+        if page not in _PAGE_FILES:
+            return _detail_error("Not found.", 404)
+        return send_from_directory(PAGES_DIR, f"{page}.html")

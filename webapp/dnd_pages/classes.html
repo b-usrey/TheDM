@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Classes &amp; Subclasses — DnDPython</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet" />
+  <style>
+    :root { --ink: #0d0b0e; --parchment: #f2e8d5; --gold: #c9a84c; --gold-dim: #7a5f28; --steel-dark: #111820; --steel-mid: #1e2a38; --glow-hot: rgba(201,168,76,0.45); --glow: rgba(201,168,76,0.18); }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--steel-dark); color: var(--parchment); font-family: 'Crimson Pro', Georgia, serif; font-size: 18px; line-height: 1.7; min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"); background-size: 200px; pointer-events: none; z-index: 0; opacity: 0.5; }
+    .page { max-width: 860px; margin: 0 auto; padding: 2rem; position: relative; z-index: 1; }
+    .page-header { display: flex; align-items: center; gap: 2rem; padding: 2rem 0 1.5rem; border-bottom: 1px solid rgba(201,168,76,0.2); margin-bottom: 2.5rem; }
+    .back-link { font-family: 'Cinzel', serif; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold-dim); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+    .back-link:hover { color: var(--gold); }
+    .page-title { font-family: 'Cinzel Decorative', serif; font-size: clamp(1.4rem, 4vw, 2.2rem); color: var(--gold); text-shadow: 0 0 30px var(--glow-hot); }
+    .page-subtitle { font-family: 'Cinzel', serif; font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold-dim); margin-top: 0.3rem; }
+
+    .class-section { margin-bottom: 3rem; }
+    .class-header { border-bottom: 2px solid var(--gold-dim); padding-bottom: 0.75rem; margin-bottom: 1.5rem; }
+    .class-name { font-family: 'Cinzel Decorative', serif; font-size: 1.5rem; color: var(--gold); }
+    .class-tagline { font-style: italic; color: rgba(242,232,213,0.65); font-size: 1rem; margin-top: 0.25rem; }
+
+    .subclass-block { background: linear-gradient(160deg, rgba(30,42,56,0.5), rgba(17,24,32,0.7)); border: 1px solid rgba(201,168,76,0.2); border-left: 3px solid var(--gold-dim); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; }
+    .subclass-name { font-family: 'Cinzel', serif; font-size: 1rem; letter-spacing: 0.08em; color: var(--gold); margin-bottom: 0.75rem; }
+
+    .feature-list { list-style: none; display: flex; flex-direction: column; gap: 0.6rem; }
+    .feature-list li { display: flex; gap: 0.75rem; font-size: 0.95rem; }
+    .feature-list li::before { content: '◈'; color: var(--gold-dim); flex-shrink: 0; line-height: 1.7; font-size: 0.75rem; }
+    .feature-list li b { color: var(--gold); font-family: 'Cinzel', serif; font-size: 0.75rem; letter-spacing: 0.07em; text-transform: uppercase; }
+    .feature-list li p { color: rgba(242,232,213,0.78); }
+
+    .also-block { background: rgba(201,168,76,0.06); border: 1px solid rgba(201,168,76,0.15); padding: 1rem 1.25rem; margin-top: 1.25rem; font-size: 0.9rem; color: rgba(242,232,213,0.65); }
+    .also-block b { font-family: 'Cinzel', serif; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold-dim); display: block; margin-bottom: 0.3rem; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <nav style="display:flex;gap:1.1rem;flex-wrap:wrap;align-items:center;">
+        <a class="back-link" href="/dnd">← Home</a>
+        <a class="back-link" href="/dnd/builder">Builder</a>
+        <a class="back-link" href="/dnd/simulator">Simulator</a>
+        <a class="back-link" href="/dnd/scenarios">Scenarios</a>
+        <a class="back-link" href="/dnd/monsters">Monsters</a>
+        <a class="back-link" href="/dnd/classes">Classes</a>
+        <a class="back-link" href="/" style="margin-left:1.5rem;">Map Generator →</a>
+      </nav>
+      <div>
+        <h1 class="page-title">⚔️ Classes &amp; Subclasses</h1>
+        <p class="page-subtitle">Implemented Features &amp; Abilities</p>
+      </div>
+    </header>
+
+    <!-- Fighter -->
+    <section class="class-section">
+      <div class="class-header">
+        <div class="class-name">Fighter</div>
+        <div class="class-tagline">Masters of martial combat — unmatched action economy and staying power.</div>
+      </div>
+
+      <div class="subclass-block">
+        <div class="subclass-name">Core Features</div>
+        <ul class="feature-list">
+          <li><div><b>Second Wind</b><p>Bonus action heal for 1d10 + Fighter level once per short rest.</p></div></li>
+          <li><div><b>Action Surge</b><p>Take one additional action on your turn. Fires automatically when in melee range of an enemy.</p></div></li>
+          <li><div><b>Extra Attack</b><p>Number of attacks scales with level: 2 attacks at level 5, 3 at level 11, 4 at level 20.</p></div></li>
+          <li><div><b>Indomitable</b><p>Reroll a failed saving throw. Uses scale with level.</p></div></li>
+        </ul>
+      </div>
+
+      <div class="subclass-block">
+        <div class="subclass-name">Champion Subclass</div>
+        <ul class="feature-list">
+          <li><div><b>Improved Critical</b><p>Critical hit range expanded to 19–20.</p></div></li>
+          <li><div><b>Superior Critical</b><p>Further expanded to 18–20 at level 15.</p></div></li>
+          <li><div><b>Survivor</b><p>Regain HP equal to 5 + Con modifier at the start of each turn when below half HP.</p></div></li>
+        </ul>
+      </div>
+
+      <div class="also-block">
+        <b>Fighting Styles</b>
+        Archery (+2 to ranged attack rolls), Two-Weapon Fighting (add ability modifier to off-hand damage).
+      </div>
+    </section>
+
+    <!-- Ranger -->
+    <section class="class-section">
+      <div class="class-header">
+        <div class="class-name">Ranger</div>
+        <div class="class-tagline">Cunning hunters who blend martial skill with nature magic.</div>
+      </div>
+
+      <div class="subclass-block">
+        <div class="subclass-name">Core Features</div>
+        <ul class="feature-list">
+          <li><div><b>Favored Foe</b><p>Mark a creature when you hit it. Deal bonus damage (d4/d6/d8 scaling with level) against the marked target. Concentration.</p></div></li>
+          <li><div><b>Extra Attack</b><p>Two attacks per Attack action from level 5.</p></div></li>
+          <li><div><b>Roving</b><p>+10 ft. to speed and climbing/swimming speed.</p></div></li>
+          <li><div><b>Land's Stride</b><p>Moving through difficult terrain costs no extra movement.</p></div></li>
+          <li><div><b>Nature's Veil</b><p>Bonus action: turn invisible until the start of your next turn. Activates automatically when HP drops below 50%.</p></div></li>
+          <li><div><b>Foe Slayer</b><p>Add Wisdom modifier to an attack roll or damage roll against your favored enemy once per turn.</p></div></li>
+        </ul>
+      </div>
+
+      <div class="subclass-block">
+        <div class="subclass-name">Gloom Stalker Subclass</div>
+        <ul class="feature-list">
+          <li><div><b>Dread Ambusher</b><p>In the first round of combat, gain a bonus attack and +10 ft. speed.</p></div></li>
+          <li><div><b>Iron Mind</b><p>Proficiency in Wisdom saving throws.</p></div></li>
+          <li><div><b>Stalker's Flurry</b><p>Once per turn, if you miss an attack, you can immediately make another attack.</p></div></li>
+          <li><div><b>Shadowy Dodge</b><p>Reaction: impose disadvantage on an incoming attack roll.</p></div></li>
+        </ul>
+      </div>
+
+      <div class="also-block">
+        <b>Feats Supported</b>
+        Sharpshooter (−5 to attack / +10 to damage tradeoff, ignores cover), Archery fighting style (+2 ranged).
+      </div>
+    </section>
+  </div>
+</body>
+</html>

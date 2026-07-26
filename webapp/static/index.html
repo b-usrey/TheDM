@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>World Map Editor</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="auth-overlay">
+  <form id="login-form" class="auth-form">
+    <h2>Log in</h2>
+    <div class="field">
+      <label for="login-username">Username</label>
+      <input id="login-username" type="text" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" autocomplete="current-password" required>
+    </div>
+    <div class="actions">
+      <button type="submit">Log in</button>
+    </div>
+    <p class="muted">No account? <a href="#" id="show-signup">Sign up</a></p>
+    <p id="login-error" class="error" hidden></p>
+  </form>
+
+  <form id="signup-form" class="auth-form" hidden>
+    <h2>Sign up</h2>
+    <div class="field">
+      <label for="signup-username">Username</label>
+      <input id="signup-username" type="text" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="signup-password">Password (6+ characters)</label>
+      <input id="signup-password" type="password" autocomplete="new-password" required>
+    </div>
+    <div class="field">
+      <label for="signup-invite">Invite code (if you were given one)</label>
+      <input id="signup-invite" type="text">
+    </div>
+    <div class="actions">
+      <button type="submit">Create account</button>
+    </div>
+    <p class="muted">Already have an account? <a href="#" id="show-login">Log in</a></p>
+    <p id="signup-error" class="error" hidden></p>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>World Map Editor</h1>
+    <span id="world-info"></span>
+    <a id="dnd-link" href="/dnd">⚔️ Combat Sim</a>
+    <label id="style-label" for="style-select">Style
+      <select id="style-select">
+        <option value="classic">Classic (parchment)</option>
+        <option value="atmospheric">Atmospheric (relief)</option>
+        <option value="realistic">Realistic (hillshaded)</option>
+      </select>
+    </label>
+    <span id="account-info">
+      <span id="account-username"></span>
+      <button id="btn-logout" type="button">Log out</button>
+    </span>
+  </header>
+
+  <main>
+    <div id="map-pane">
+      <div id="map-wrap">
+        <img id="map-img" alt="World map">
+        <div id="marker-layer"></div>
+        <div id="selection-box"></div>
+        <img id="legend-img" alt="Legend">
+      </div>
+    </div>
+
+    <aside id="sidebar">
+      <nav id="tab-nav">
+        <button class="tab-btn active" data-tab="map">Map</button>
+        <button class="tab-btn" data-tab="world">World</button>
+        <button class="tab-btn" data-tab="selection">Selection</button>
+        <button class="tab-btn" data-tab="nations">Nations</button>
+        <button class="tab-btn" data-tab="settlements">Settlements</button>
+        <button class="tab-btn" data-tab="poi">Points of Interest</button>
+      </nav>
+
+      <div class="tab-page" data-tab-page="map">
+        <section id="location-panel" class="panel">
+          <h2>Nations In View</h2>
+          <p id="nations-in-view" class="muted"></p>
+        </section>
+
+        <section id="boundaries-panel" class="panel">
+          <h2>Feudal Boundaries</h2>
+          <label class="boundary-toggle">
+            <input type="checkbox" id="toggle-duchy">
+            <span class="swatch swatch-duchy"></span> Duchies
+          </label>
+          <label class="boundary-toggle">
+            <input type="checkbox" id="toggle-county">
+            <span class="swatch swatch-county"></span> Counties
+          </label>
+          <label class="boundary-toggle">
+            <input type="checkbox" id="toggle-barony">
+            <span class="swatch swatch-barony"></span> Baronies
+          </label>
+        </section>
+
+        <section id="grid-panel" class="panel">
+          <h2>Grid Overlay</h2>
+          <div class="field">
+            <label for="grid-kind-select">Type</label>
+            <select id="grid-kind-select">
+              <option value="none">None</option>
+              <option value="square">Square</option>
+              <option value="hex">Hexagon</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="grid-size-miles">Cell size (miles)</label>
+            <input id="grid-size-miles" type="number" value="10" min="0.1" step="0.1">
+          </div>
+        </section>
+
+        <section id="zoom-panel" class="panel">
+          <h2>Zoom to Region</h2>
+          <p id="zoom-hint" class="muted">Click and drag on the map to select a region to zoom into.</p>
+          <div id="zoom-body" hidden>
+            <p id="zoom-bounds" class="muted"></p>
+            <div class="field">
+              <label for="zoom-resolution">Detail (output size, px, 128&ndash;1024)</label>
+              <input id="zoom-resolution" type="number" value="512" min="128" max="1024" step="1">
+            </div>
+            <div class="field">
+              <label for="zoom-filename">Save region as</label>
+              <input id="zoom-filename" type="text" placeholder="region.npz">
+            </div>
+            <div class="actions">
+              <button id="btn-zoom-in">Zoom In</button>
+              <button id="btn-zoom-clear">Clear</button>
+            </div>
+            <p class="muted">Region generation is slower than a new world at the same
+              size and can take a minute or more, especially for a small selection
+              at high detail.</p>
+          </div>
+          <p id="zoom-status" class="muted"></p>
+          <p id="zoom-error" class="error" hidden></p>
+        </section>
+
+        <section id="export-panel" class="panel">
+          <h2>Export</h2>
+          <label class="boundary-toggle">
+            <input type="checkbox" id="export-legend" checked>
+            Include legend in image
+          </label>
+          <div class="actions">
+            <button id="btn-download-map">Download Map PNG</button>
+          </div>
+          <p id="export-status" class="muted"></p>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="world" hidden>
+        <section id="title-panel" class="panel">
+          <h2>Map Title</h2>
+          <div class="field">
+            <input id="map-title" type="text" maxlength="80" placeholder="e.g. The Great Kingdom of Vastmarch">
+          </div>
+          <div class="actions">
+            <button id="btn-title-save">Save</button>
+          </div>
+          <p id="title-hint" class="muted">Shown on the title plaque in the Atmospheric style. Leave blank to hide it.</p>
+        </section>
+
+        <section id="files-panel" class="panel">
+          <h2>World File</h2>
+          <p class="muted">Current: <span id="current-filename"></span></p>
+          <div class="actions">
+            <button id="btn-download-world">Download .npz</button>
+          </div>
+
+          <p class="muted" style="margin-top:0.75rem">My files (worlds and zoomed regions you've made):</p>
+          <div class="field">
+            <select id="my-files-select"></select>
+          </div>
+          <div class="actions">
+            <button id="btn-switch-world">Switch to Selected</button>
+            <button id="btn-delete-world" class="danger">Delete Selected</button>
+          </div>
+
+          <p class="muted" style="margin-top:0.75rem">Upload a world file to load it:</p>
+          <div class="field">
+            <input id="upload-file-input" type="file" accept=".npz">
+          </div>
+          <div class="actions">
+            <button id="btn-upload">Upload &amp; Load</button>
+          </div>
+
+          <div class="field" style="margin-top:0.75rem">
+            <label for="save-as-filename">Save current world as</label>
+            <input id="save-as-filename" type="text" placeholder="filename.npz">
+          </div>
+          <div class="actions">
+            <button id="btn-save-as">Save As</button>
+          </div>
+
+          <p class="muted" style="margin-top:0.75rem">Generate a new world:</p>
+          <div class="field">
+            <label for="gen-seed">Seed</label>
+            <input id="gen-seed" type="number" value="0" step="1">
+          </div>
+          <div class="field">
+            <label for="gen-size">Size (128&ndash;768)</label>
+            <input id="gen-size" type="number" value="512" min="128" max="768" step="1">
+          </div>
+          <div class="field">
+            <label for="gen-continent-bias">Continent bias (0&ndash;1, blank = default)</label>
+            <input id="gen-continent-bias" type="number" min="0" max="1" step="0.01" placeholder="e.g. 0.5">
+          </div>
+          <div class="field">
+            <label for="gen-filename">Save new world as</label>
+            <input id="gen-filename" type="text" placeholder="world.npz">
+          </div>
+          <div class="actions">
+            <button id="btn-generate">Generate</button>
+          </div>
+
+          <p class="muted" style="margin-top:0.75rem">Safety net:</p>
+          <div class="actions">
+            <button id="btn-undo">Undo Last Edit</button>
+          </div>
+          <div class="actions">
+            <button id="btn-restore-backup" class="danger">Restore Last Backup</button>
+          </div>
+
+          <p id="files-status" class="muted"></p>
+          <p id="files-error" class="error" hidden></p>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="selection" hidden>
+        <section id="inspector" class="panel">
+          <h2>Selection</h2>
+          <p id="inspector-empty" class="muted">Click a marker on the map, or a row in the Nations/Settlements/Points of Interest tabs, to edit it.</p>
+          <div id="inspector-body" hidden>
+            <div class="field">
+              <label for="edit-name">Name</label>
+              <input id="edit-name" type="text" maxlength="63">
+            </div>
+            <div class="field">
+              <label for="edit-notes">Notes (lore, history, plot hooks...)</label>
+              <textarea id="edit-notes" rows="5" maxlength="4000"></textarea>
+            </div>
+            <div class="field" id="edit-tier-field">
+              <label for="edit-tier">Tier</label>
+              <select id="edit-tier">
+                <option value="village">Village</option>
+                <option value="town">Town</option>
+                <option value="city">City</option>
+                <option value="capital">Capital</option>
+              </select>
+            </div>
+            <div id="edit-settlement-stats-field" hidden>
+              <div class="field">
+                <label for="edit-population">Population</label>
+                <input id="edit-population" type="number" min="0" step="1">
+              </div>
+              <div class="field">
+                <label for="edit-area-km2">Area (km2)</label>
+                <input id="edit-area-km2" type="number" min="0" step="0.1">
+              </div>
+              <div class="field">
+                <label for="edit-economic-output">Economic output (gold/year)</label>
+                <input id="edit-economic-output" type="number" min="0" step="1">
+              </div>
+            </div>
+            <div id="edit-titles-field" hidden>
+              <p class="muted">Feudal titles for this nation:</p>
+              <div class="field">
+                <label for="edit-title-duke">Duke-equivalent</label>
+                <input id="edit-title-duke" type="text" maxlength="63">
+              </div>
+              <div class="field">
+                <label for="edit-title-count">Count-equivalent</label>
+                <input id="edit-title-count" type="text" maxlength="63">
+              </div>
+              <div class="field">
+                <label for="edit-title-baron">Baron-equivalent</label>
+                <input id="edit-title-baron" type="text" maxlength="63">
+              </div>
+            </div>
+            <div class="field" id="edit-poi-kind-field" hidden>
+              <label for="edit-poi-kind">Kind</label>
+              <select id="edit-poi-kind"></select>
+            </div>
+            <div id="inspector-stats" class="muted"></div>
+            <div class="actions">
+              <button id="btn-save">Save</button>
+              <button id="btn-delete" class="danger">Delete</button>
+              <button id="btn-cancel">Cancel</button>
+            </div>
+            <p id="inspector-error" class="error" hidden></p>
+          </div>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="nations" hidden>
+        <section class="panel">
+          <h2>Nations (<span id="nation-count">0</span>)</h2>
+          <ul id="nation-list"></ul>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="settlements" hidden>
+        <section class="panel">
+          <h2>Settlements (<span id="settlement-count">0</span>)</h2>
+          <div class="field">
+            <label for="new-settlement-tier">Tier</label>
+            <select id="new-settlement-tier">
+              <option value="village">Village</option>
+              <option value="town">Town</option>
+              <option value="city">City</option>
+              <option value="capital">Capital</option>
+            </select>
+          </div>
+          <div class="actions">
+            <button id="btn-place-settlement">Place on Map</button>
+          </div>
+          <p class="muted">Click "Place on Map", then click a spot on the map to add it there.</p>
+          <p id="settlement-error" class="error" hidden></p>
+          <input id="settlement-search" type="text" placeholder="Search by name...">
+          <div id="settlement-table-wrap">
+            <table id="settlement-table">
+              <thead>
+                <tr><th>Name</th><th>Tier</th><th>Nation</th><th>Pop.</th><th>Resource</th></tr>
+              </thead>
+              <tbody id="settlement-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="poi" hidden>
+        <section id="poi-panel" class="panel">
+          <h2>Points of Interest (<span id="poi-count">0</span>)</h2>
+          <div class="field">
+            <label for="poi-kind-select">Kind</label>
+            <select id="poi-kind-select"></select>
+          </div>
+          <div class="actions">
+            <button id="btn-place-poi">Place on Map</button>
+          </div>
+          <p class="muted">Click "Place on Map", then click a spot on the map to add it there.</p>
+          <ul id="poi-list"></ul>
+          <p id="poi-error" class="error" hidden></p>
+        </section>
+      </div>
+    </aside>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+[submodule "mapgenerator"]
+	path = mapgenerator
+	url = https://github.com/b-usrey/MapGeneration.git
+[submodule "dndpython"]
+	path = dndpython
+	url = https://github.com/b-usrey/DnDPython.git

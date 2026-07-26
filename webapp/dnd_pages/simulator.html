@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Combat Simulator — DnDPython</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Tokens ─────────────────────────────────────────────────────── */
+    :root {
+      --ink:        #0d0b0e;
+      --parchment:  #f2e8d5;
+      --gold:       #c9a84c;
+      --gold-dim:   #7a5f28;
+      --crimson:    #8b1a1a;
+      --steel:      #3a4a5c;
+      --steel-mid:  #1e2a38;
+      --steel-dark: #111820;
+      --glow:       rgba(201,168,76,0.18);
+      --glow-hot:   rgba(201,168,76,0.45);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--steel-dark);
+      color: var(--parchment);
+      font-family: 'Crimson Pro', Georgia, serif;
+      font-size: 18px;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      background-size: 200px 200px;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.5;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    .sim-header {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      padding: 2rem 0 1.5rem;
+      border-bottom: 1px solid rgba(201,168,76,0.2);
+      margin-bottom: 2.5rem;
+    }
+
+    .back-link {
+      font-family: 'Cinzel', serif;
+      font-size: 0.75rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      text-decoration: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .back-link:hover { color: var(--gold); }
+
+    .sim-title {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: clamp(1.4rem, 4vw, 2.2rem);
+      color: var(--gold);
+      text-shadow: 0 0 30px var(--glow-hot);
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────── */
+    .sim-layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    @media (max-width: 720px) {
+      .sim-layout { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panel ──────────────────────────────────────────────────────── */
+    .panel {
+      background: linear-gradient(160deg, rgba(30,42,56,0.6), rgba(17,24,32,0.8));
+      border: 1px solid rgba(201,168,76,0.2);
+      padding: 1.75rem;
+    }
+
+    .panel-title {
+      font-family: 'Cinzel', serif;
+      font-size: 0.78rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(201,168,76,0.15);
+    }
+
+    /* ── Form fields ────────────────────────────────────────────────── */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .field label {
+      font-family: 'Cinzel', serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+    }
+
+    .field select,
+    .field input[type="number"],
+    .field input[type="text"] {
+      background: var(--steel-dark);
+      border: 1px solid rgba(201,168,76,0.3);
+      color: var(--parchment);
+      font-family: 'Crimson Pro', serif;
+      font-size: 1rem;
+      padding: 0.55rem 0.75rem;
+      outline: none;
+      width: 100%;
+    }
+
+    .field select:focus,
+    .field input:focus { border-color: var(--gold); }
+
+    .field-hint {
+      font-size: 0.82rem;
+      font-style: italic;
+      color: rgba(242,232,213,0.45);
+      line-height: 1.4;
+    }
+
+    /* ── Button ─────────────────────────────────────────────────────── */
+    .run-btn {
+      font-family: 'Cinzel', serif;
+      font-size: 0.8rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      padding: 0.9rem 2rem;
+      border: 2px solid var(--gold);
+      background: var(--gold);
+      color: var(--ink);
+      cursor: pointer;
+      transition: all 0.25s;
+      width: 100%;
+      margin-top: 0.5rem;
+    }
+    .run-btn:hover:not(:disabled) {
+      background: transparent;
+      color: var(--gold);
+      box-shadow: 0 0 30px var(--glow-hot);
+    }
+    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg {
+      color: #e87070;
+      font-style: italic;
+      font-size: 0.9rem;
+      margin-top: 0.75rem;
+    }
+
+    /* ── Results placeholder ────────────────────────────────────────── */
+    .results-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+      color: rgba(242,232,213,0.2);
+      font-style: italic;
+      font-size: 1rem;
+      border: 1px dashed rgba(201,168,76,0.12);
+    }
+
+    /* ── Stats row ──────────────────────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background: rgba(17,24,32,0.6);
+      border: 1px solid rgba(201,168,76,0.15);
+      border-top: 2px solid var(--gold-dim);
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .stat-label {
+      display: block;
+      font-family: 'Cinzel', serif;
+      font-size: 0.68rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      margin-bottom: 0.3rem;
+    }
+
+    .stat-value {
+      display: block;
+      font-family: 'Cinzel Decorative', serif;
+      font-size: 1.5rem;
+      color: var(--gold);
+    }
+
+    /* ── Outcome ────────────────────────────────────────────────────── */
+    .outcome-text {
+      font-style: italic;
+      color: rgba(242,232,213,0.75);
+      margin-bottom: 1.5rem;
+      padding: 0.75rem 1rem;
+      background: rgba(0,0,0,0.2);
+      border-left: 2px solid var(--gold-dim);
+      font-size: 1rem;
+    }
+
+    /* ── Creature table ─────────────────────────────────────────────── */
+    .creature-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .creature-table th {
+      font-family: 'Cinzel', serif;
+      font-size: 0.68rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      border-bottom: 1px solid rgba(201,168,76,0.2);
+      padding: 0.4rem 0.75rem;
+      text-align: left;
+    }
+
+    .creature-table td {
+      padding: 0.4rem 0.75rem;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      color: rgba(242,232,213,0.8);
+    }
+
+    .creature-table tr.dead td { opacity: 0.38; }
+    .team-blue { color: #6ab0e8; }
+    .team-red  { color: #e87070; }
+
+    /* ── Combat log ─────────────────────────────────────────────────── */
+    .log-details summary {
+      font-family: 'Cinzel', serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      cursor: pointer;
+      margin-bottom: 0.5rem;
+      user-select: none;
+    }
+    .log-details summary:hover { color: var(--gold); }
+
+    #res-log {
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(201,168,76,0.1);
+      padding: 1rem;
+      font-size: 0.76rem;
+      line-height: 1.6;
+      color: rgba(242,232,213,0.6);
+      white-space: pre-wrap;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <div class="page">
+
+    <header class="sim-header">
+      <nav style="display:flex;gap:1.1rem;flex-wrap:wrap;align-items:center;">
+        <a class="back-link" href="/dnd">← Home</a>
+        <a class="back-link" href="/dnd/builder">Builder</a>
+        <a class="back-link" href="/dnd/simulator">Simulator</a>
+        <a class="back-link" href="/dnd/scenarios">Scenarios</a>
+        <a class="back-link" href="/dnd/monsters">Monsters</a>
+        <a class="back-link" href="/dnd/classes">Classes</a>
+        <a class="back-link" href="/" style="margin-left:1.5rem;">Map Generator →</a>
+      </nav>
+      <h1 class="sim-title">⚔️ Combat Simulator</h1>
+    </header>
+
+    <div class="sim-layout">
+
+      <!-- ── Config panel ──────────────────────────────────────────── -->
+      <aside class="panel">
+        <p class="panel-title">Configuration</p>
+
+        <div class="field">
+          <label for="scenario-select">Scenario</label>
+          <select id="scenario-select">
+            <option value="">Loading scenarios…</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="episodes-input">Episodes</label>
+          <input id="episodes-input" type="number" min="1" max="100" value="10" />
+          <span class="field-hint">How many fights to simulate (max 100).</span>
+        </div>
+
+        <button class="run-btn" id="run-btn" onclick="runSim()">Roll Initiative</button>
+        <p id="sim-error" class="error-msg hidden"></p>
+      </aside>
+
+      <!-- ── Results panel ─────────────────────────────────────────── -->
+      <section class="panel">
+        <p class="panel-title">Results</p>
+
+        <div id="results-placeholder" class="results-placeholder">
+          Configure a scenario and press Roll Initiative
+        </div>
+
+        <div id="sim-results" class="hidden">
+
+          <div class="stats-row">
+            <div class="stat-card">
+              <span class="stat-label">Blue Win Rate</span>
+              <span class="stat-value" id="res-winrate">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Avg Rounds</span>
+              <span class="stat-value" id="res-rounds">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Episodes Run</span>
+              <span class="stat-value" id="res-episodes">—</span>
+            </div>
+          </div>
+
+          <p id="res-outcome" class="outcome-text"></p>
+
+          <table class="creature-table">
+            <thead>
+              <tr><th>Name</th><th>Team</th><th>HP</th><th>Status</th></tr>
+            </thead>
+            <tbody id="res-creatures"></tbody>
+          </table>
+
+          <details class="log-details">
+            <summary>Combat Log (last episode)</summary>
+            <pre id="res-log"></pre>
+          </details>
+
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "/api/dnd";
+
+    async function loadScenarios() {
+      const sel = document.getElementById("scenario-select");
+      try {
+        const res = await fetch(`${API_URL}/scenarios`);
+        const data = await res.json();
+        if (!data.scenarios.length) {
+          sel.innerHTML = '<option value="">No scenarios found</option>';
+          return;
+        }
+        sel.innerHTML = data.scenarios
+          .map(s => `<option value="${s}">${s.replace(".json", "").replace(/_/g, " ")}</option>`)
+          .join("");
+      } catch {
+        sel.innerHTML = '<option value="">Could not reach API</option>';
+      }
+    }
+
+    async function runSim() {
+      const btn          = document.getElementById("run-btn");
+      const scenarioName = document.getElementById("scenario-select").value;
+      const episodes     = Math.min(parseInt(document.getElementById("episodes-input").value) || 1, 100);
+      const errEl        = document.getElementById("sim-error");
+      const resultsEl    = document.getElementById("sim-results");
+      const placeholder  = document.getElementById("results-placeholder");
+
+      if (!scenarioName) {
+        errEl.textContent = "Please select a scenario first.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+
+      errEl.classList.add("hidden");
+      btn.disabled = true;
+      btn.textContent = "Rolling…";
+
+      try {
+        const res = await fetch(`${API_URL}/simulate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenario_name: scenarioName, episodes, silent: true })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || res.statusText);
+        }
+        const data = await res.json();
+
+        document.getElementById("res-winrate").textContent  = `${(data.win_rate * 100).toFixed(1)}%`;
+        document.getElementById("res-rounds").textContent   = data.avg_rounds.toFixed(1);
+        document.getElementById("res-episodes").textContent = data.episodes_run;
+        document.getElementById("res-outcome").textContent  = data.sample_outcome;
+
+        document.getElementById("res-creatures").innerHTML = data.creatures.map(c => `
+          <tr class="${c.alive ? "" : "dead"}">
+            <td>${c.name}</td>
+            <td class="team-${c.team}">${c.team}</td>
+            <td>${c.hp} / ${c.max_hp}</td>
+            <td>${c.alive ? "Alive" : "Dead"}</td>
+          </tr>
+        `).join("");
+
+        document.getElementById("res-log").textContent = data.log;
+
+        placeholder.classList.add("hidden");
+        resultsEl.classList.remove("hidden");
+      } catch (e) {
+        errEl.textContent = `Error: ${e.message}`;
+        errEl.classList.remove("hidden");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Roll Initiative";
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadScenarios().then(() => {
+        const preset = new URLSearchParams(location.search).get("scenario");
+        if (preset) document.getElementById("scenario-select").value = preset;
+      });
+    });
+  </script>
+
+</body>
+</html>

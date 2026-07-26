@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DnDPython — Character Builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --ink:        #0d0b0e;
+      --parchment:  #f2e8d5;
+      --gold:       #c9a84c;
+      --gold-dim:   #7a5f28;
+      --crimson:    #8b1a1a;
+      --steel:      #3a4a5c;
+      --steel-mid:  #1e2a38;
+      --steel-dark: #111820;
+      --glow:       rgba(201,168,76,0.18);
+      --glow-hot:   rgba(201,168,76,0.45);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background-color: var(--steel-dark);
+      color: var(--parchment);
+      font-family: 'Crimson Pro', Georgia, serif;
+      font-size: 17px;
+      line-height: 1.65;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      background-size: 200px 200px;
+      pointer-events: none; z-index: 0; opacity: 0.5;
+    }
+    .container { max-width: 860px; margin: 0 auto; padding: 0 1.5rem 5rem; position: relative; z-index: 1; }
+
+    /* ── Header ── */
+    header { text-align: center; padding: 3rem 2rem 1.5rem; position: relative; z-index: 1; }
+    header::after {
+      content: ''; position: absolute; top: 10%; left: 50%; transform: translateX(-50%);
+      width: 500px; height: 220px;
+      background: radial-gradient(ellipse, var(--glow-hot) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    header h1 {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: clamp(1.6rem, 5vw, 2.8rem);
+      color: var(--gold);
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 40px var(--glow-hot), 0 2px 8px rgba(0,0,0,0.8);
+      position: relative; z-index: 1;
+    }
+    header p {
+      font-family: 'Cinzel', serif; font-size: 0.8rem;
+      letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--gold-dim); margin-top: 0.5rem; position: relative; z-index: 1;
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex; justify-content: center; gap: 1.5rem;
+      padding: 0.8rem 0; border-bottom: 1px solid rgba(201,168,76,0.2);
+      position: relative; z-index: 1;
+    }
+    nav a {
+      font-family: 'Cinzel', serif; font-size: 0.78rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--gold-dim); text-decoration: none;
+      transition: color .2s;
+    }
+    nav a:hover { color: var(--gold); }
+
+    /* ── Wizard steps bar ── */
+    .wizard-bar {
+      display: flex; justify-content: center; gap: 0; margin: 2rem 0 1.5rem;
+      border: 1px solid rgba(201,168,76,0.25); border-radius: 8px; overflow: hidden;
+    }
+    .wz-step {
+      flex: 1; padding: 0.55rem 0.25rem; text-align: center;
+      font-family: 'Cinzel', serif; font-size: 0.7rem;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--gold-dim); background: var(--steel-mid);
+      border-right: 1px solid rgba(201,168,76,0.2); cursor: pointer;
+      transition: background .2s, color .2s;
+    }
+    .wz-step:last-child { border-right: none; }
+    .wz-step.active { background: rgba(201,168,76,0.15); color: var(--gold); }
+    .wz-step.done { color: var(--gold-dim); background: rgba(201,168,76,0.06); }
+
+    /* ── Panel cards ── */
+    .panel {
+      display: none; background: var(--steel-mid);
+      border: 1px solid rgba(201,168,76,0.22);
+      border-radius: 10px; padding: 2rem;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+    }
+    .panel.active { display: block; }
+    .panel h2 {
+      font-family: 'Cinzel', serif; font-size: 1.15rem;
+      color: var(--gold); letter-spacing: 0.12em;
+      text-transform: uppercase; margin-bottom: 1.25rem;
+      padding-bottom: 0.5rem; border-bottom: 1px solid rgba(201,168,76,0.2);
+    }
+
+    /* ── Form controls ── */
+    label { font-family: 'Cinzel', serif; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold-dim); display: block; margin-bottom: 0.3rem; }
+    input[type=text], input[type=number], select, textarea {
+      width: 100%; padding: 0.55rem 0.75rem;
+      background: rgba(0,0,0,0.35); border: 1px solid rgba(201,168,76,0.3);
+      border-radius: 5px; color: var(--parchment);
+      font-family: 'Crimson Pro', serif; font-size: 1rem;
+      outline: none; transition: border-color .2s;
+    }
+    input[type=text]:focus, input[type=number]:focus, select:focus, textarea:focus {
+      border-color: var(--gold);
+    }
+    select option { background: var(--steel-dark); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    .form-row.trio { grid-template-columns: 1fr 1fr 1fr; }
+    .form-group { margin-bottom: 1rem; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-block; padding: 0.6rem 1.5rem;
+      font-family: 'Cinzel', serif; font-size: 0.78rem;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      border: 1px solid var(--gold); border-radius: 5px;
+      background: transparent; color: var(--gold);
+      cursor: pointer; transition: background .2s, color .2s;
+    }
+    .btn:hover { background: var(--gold); color: var(--ink); }
+    .btn-primary { background: rgba(201,168,76,0.15); }
+    .btn-sm { padding: 0.3rem 0.8rem; font-size: 0.7rem; }
+    .btn-danger { border-color: var(--crimson); color: var(--crimson); }
+    .btn-danger:hover { background: var(--crimson); color: #fff; }
+    .nav-row { display: flex; justify-content: space-between; margin-top: 1.75rem; }
+
+    /* ── Race card ── */
+    .race-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+    .race-card {
+      padding: 0.75rem 1rem; background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(201,168,76,0.2); border-radius: 7px;
+      cursor: pointer; transition: border-color .2s, background .2s;
+    }
+    .race-card:hover { border-color: var(--gold-dim); }
+    .race-card.selected { border-color: var(--gold); background: rgba(201,168,76,0.1); }
+    .race-card .rc-name { font-family: 'Cinzel', serif; font-size: 0.82rem; color: var(--gold); margin-bottom: 0.2rem; }
+    .race-card .rc-bonuses { font-size: 0.82rem; color: var(--parchment); opacity: 0.8; }
+    .race-card .rc-traits { font-size: 0.75rem; color: var(--gold-dim); margin-top: 0.3rem; }
+
+    /* ── Level journey ── */
+    .journey { position: relative; padding-left: 2.5rem; }
+    .journey::before {
+      content: ''; position: absolute; left: 0.85rem; top: 0; bottom: 0;
+      width: 2px; background: linear-gradient(to bottom, var(--gold-dim), transparent);
+    }
+    .lv-card {
+      position: relative; margin-bottom: 1rem;
+      background: rgba(0,0,0,0.25); border: 1px solid rgba(201,168,76,0.18);
+      border-radius: 8px; padding: 0.9rem 1rem;
+    }
+    .lv-badge {
+      position: absolute; left: -2.3rem; top: 0.65rem;
+      width: 1.6rem; height: 1.6rem;
+      background: var(--steel-dark); border: 1px solid var(--gold-dim);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-family: 'Cinzel', serif; font-size: 0.58rem; color: var(--gold);
+    }
+    .lv-header { font-family: 'Cinzel', serif; font-size: 0.8rem; color: var(--gold-dim); margin-bottom: 0.5rem; letter-spacing: 0.08em; }
+    .lv-features { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: flex-start; }
+    .feat-chip {
+      padding: 0.2rem 0.6rem; background: rgba(201,168,76,0.08);
+      border: 1px solid rgba(201,168,76,0.25); border-radius: 12px;
+      font-size: 0.8rem; color: var(--parchment);
+    }
+    .feat-choice { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .feat-choice label { margin: 0; font-size: 0.78rem; color: var(--gold-dim); white-space: nowrap; }
+    .feat-choice select { width: auto; min-width: 160px; padding: 0.2rem 0.5rem; font-size: 0.85rem; }
+    .asi-widget { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .asi-widget select { width: auto; min-width: 130px; padding: 0.2rem 0.5rem; font-size: 0.85rem; }
+    .asi-widget span { font-size: 0.82rem; color: var(--gold-dim); }
+
+    /* ── Stat table ── */
+    .stat-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    .stat-table th, .stat-table td { padding: 0.4rem 0.6rem; text-align: center; border: 1px solid rgba(201,168,76,0.15); font-size: 0.92rem; }
+    .stat-table th { font-family: 'Cinzel', serif; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold-dim); background: rgba(0,0,0,0.3); }
+    .stat-table td.row-label { font-family: 'Cinzel', serif; font-size: 0.72rem; color: var(--gold-dim); text-align: left; letter-spacing: 0.08em; background: rgba(0,0,0,0.2); }
+    .stat-table input[type=number] { width: 60px; padding: 0.2rem 0.3rem; text-align: center; font-size: 0.95rem; }
+    .stat-total { font-weight: bold; color: var(--gold); }
+    .stat-mod { font-style: italic; color: var(--gold-dim); font-size: 0.85rem; }
+    .mode-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .mode-tab {
+      padding: 0.35rem 0.9rem; border: 1px solid rgba(201,168,76,0.3);
+      border-radius: 4px; font-family: 'Cinzel', serif; font-size: 0.7rem;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--gold-dim); cursor: pointer; background: transparent; transition: .2s;
+    }
+    .mode-tab.active { border-color: var(--gold); color: var(--gold); background: rgba(201,168,76,0.1); }
+
+    /* ── Equipment ── */
+    .eq-section { margin-bottom: 1.25rem; }
+    .eq-section h3 { font-family: 'Cinzel', serif; font-size: 0.82rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold-dim); margin-bottom: 0.6rem; }
+    .item-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .item-btn {
+      padding: 0.25rem 0.65rem; background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(201,168,76,0.2); border-radius: 5px;
+      font-size: 0.82rem; color: var(--parchment); cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+    .item-btn:hover { border-color: var(--gold-dim); }
+    .item-btn.in-inv { border-color: var(--gold-dim); background: rgba(201,168,76,0.08); }
+    .item-btn.equipped { border-color: var(--gold); background: rgba(201,168,76,0.18); color: var(--gold); }
+    .item-btn.locked { opacity: 0.3; cursor: not-allowed; }
+    .inv-summary { margin-top: 0.5rem; font-size: 0.82rem; color: var(--gold-dim); font-style: italic; }
+
+    /* ── Encounter ── */
+    .monster-row {
+      display: grid; grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 0.6rem; align-items: end; margin-bottom: 0.6rem;
+    }
+
+    /* ── Review / JSON ── */
+    .json-box {
+      background: rgba(0,0,0,0.4); border: 1px solid rgba(201,168,76,0.2);
+      border-radius: 6px; padding: 1rem; font-family: monospace; font-size: 0.78rem;
+      color: #a8d8a8; max-height: 340px; overflow-y: auto; white-space: pre; word-break: break-all;
+    }
+    .notice { padding: 0.6rem 0.9rem; background: rgba(201,168,76,0.07); border-left: 3px solid var(--gold-dim); border-radius: 0 5px 5px 0; font-size: 0.88rem; color: var(--gold-dim); margin: 0.75rem 0; }
+    .api-section { margin-top: 1.5rem; border-top: 1px solid rgba(201,168,76,0.18); padding-top: 1rem; }
+    .api-section h3 { font-family: 'Cinzel', serif; font-size: 0.82rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold-dim); margin-bottom: 0.75rem; }
+
+    /* ── Misc ── */
+    .hint { font-size: 0.82rem; color: var(--gold-dim); font-style: italic; margin-bottom: 0.75rem; }
+    .tag-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
+    .tag { padding: 0.15rem 0.5rem; border: 1px solid rgba(201,168,76,0.25); border-radius: 10px; font-size: 0.76rem; color: var(--gold-dim); }
+    hr.rune { border: none; border-top: 1px solid rgba(201,168,76,0.2); margin: 1.25rem 0; }
+    #apiStatus { font-size: 0.85rem; margin-top: 0.5rem; }
+    .ok   { color: #7ecb7e; } .err  { color: #e07070; }
+    .flex-bonus-row { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap; }
+    .flex-bonus-row label { margin: 0; white-space: nowrap; font-size: 0.78rem; }
+    .flex-bonus-row select { width: auto; min-width: 110px; }
+
+    /* ── Slider ── */
+    input[type=range] { width: 100%; accent-color: var(--gold); margin: 0.3rem 0; }
+    .level-display { font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--gold); text-align: center; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Character Builder</h1>
+  <p>DnDPython &mdash; Works in your browser, no server required</p>
+</header>
+
+<nav>
+  <a href="/dnd">Home</a>
+  <a href="/dnd/builder">Builder</a>
+  <a href="/dnd/simulator">Simulator</a>
+  <a href="/dnd/scenarios">Scenarios</a>
+  <a href="/dnd/monsters">Monsters</a>
+  <a href="/dnd/classes">Classes</a>
+  <a href="/" style="margin-left:auto;">&larr; Map Generator</a>
+</nav>
+
+<div class="container">
+
+  <!-- Wizard bar -->
+  <div class="wizard-bar">
+    <div class="wz-step active" data-step="1" onclick="goStep(1)">I · Identity</div>
+    <div class="wz-step"       data-step="2" onclick="goStep(2)">II · Journey</div>
+    <div class="wz-step"       data-step="3" onclick="goStep(3)">III · Stats</div>
+    <div class="wz-step"       data-step="4" onclick="goStep(4)">IV · Gear</div>
+    <div class="wz-step"       data-step="5" onclick="goStep(5)">V · Encounter</div>
+    <div class="wz-step"       data-step="6" onclick="goStep(6)">VI · Export</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- STEP 1: Identity                                       -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="panel active" id="step1">
+    <h2>I · Identity</h2>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="charName">Character Name</label>
+        <input type="text" id="charName" placeholder="e.g. Brendiir" />
+      </div>
+      <div class="form-group">
+        <label for="classSelect">Class</label>
+        <select id="classSelect" onchange="onClassChange()">
+          <option value="">— Choose class —</option>
+          <option>Barbarian</option>
+          <option>Cleric</option>
+          <option>Fighter</option>
+          <option>Paladin</option>
+          <option>Ranger</option>
+          <option>Rogue</option>
+          <option>Warlock</option>
+          <option>Wizard</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Level: <span id="lvLabel" class="level-display">1</span></label>
+      <input type="range" id="levelSlider" min="1" max="20" value="1" oninput="document.getElementById('lvLabel').textContent=this.value" />
+    </div>
+
+    <hr class="rune" />
+
+    <div class="form-group">
+      <label>Race</label>
+      <p class="hint">Your race grants ability score bonuses, speed, weapon/armor proficiencies, and special traits.</p>
+      <div class="race-grid" id="raceGrid"></div>
+      <div id="flexBonusSection" style="display:none">
+        <p class="hint" style="margin-top:0.5rem">Half-Elf: choose two additional ability scores to gain +1 each (not Charisma).</p>
+        <div class="flex-bonus-row" id="flexBonusRow"></div>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <span></span>
+      <button class="btn btn-primary" onclick="goStep(2)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- STEP 2: Level Journey                                  -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="panel" id="step2">
+    <h2>II · Level Journey</h2>
+    <p class="hint" id="journeyHint">Select a class and level on the previous step, then return here.</p>
+    <div class="journey" id="journeyDiv"></div>
+    <div class="nav-row">
+      <button class="btn" onclick="goStep(1)">&larr; Back</button>
+      <button class="btn btn-primary" onclick="goStep(3)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- STEP 3: Ability Scores                                 -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="panel" id="step3">
+    <h2>III · Ability Scores</h2>
+    <div class="mode-tabs">
+      <button class="mode-tab active" onclick="setMode('sa')">Standard Array</button>
+      <button class="mode-tab" onclick="setMode('pb')">Point Buy</button>
+      <button class="mode-tab" onclick="setMode('mn')">Manual</button>
+    </div>
+    <div id="modeDesc" class="hint"></div>
+    <table class="stat-table" id="statTable">
+      <thead>
+        <tr>
+          <th>Row</th>
+          <th>Str</th><th>Dex</th><th>Con</th><th>Int</th><th>Wis</th><th>Cha</th>
+        </tr>
+      </thead>
+      <tbody id="statBody"></tbody>
+    </table>
+    <div id="pbBudget" class="hint" style="display:none"></div>
+    <div class="nav-row">
+      <button class="btn" onclick="goStep(2)">&larr; Back</button>
+      <button class="btn btn-primary" onclick="goStep(4)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- STEP 4: Equipment                                      -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="panel" id="step4">
+    <h2>IV · Equipment</h2>
+    <p class="hint">Click an item to add it to your pack. Click again to equip it (gold = equipped). Items you can't use are dimmed.</p>
+    <div id="eqContent"></div>
+    <div class="nav-row">
+      <button class="btn" onclick="goStep(3)">&larr; Back</button>
+      <button class="btn btn-primary" onclick="goStep(5)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- STEP 5: Encounter                                      -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="panel" id="step5">
+    <h2>V · Encounter</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="scenName">Scenario Name</label>
+        <input type="text" id="scenName" placeholder="e.g. Dungeon Ambush" />
+      </div>
+      <div class="form-group">
+        <label for="saveFile">Save Filename</label>
+        <input type="text" id="saveFile" placeholder="my_scenario.json" />
+      </div>
+    </div>
+    <div class="form-row trio">
+      <div class="form-group">
+        <label for="mapW">Map Width (ft)</label>
+        <input type="number" id="mapW" value="60" min="10" max="200" />
+      </div>
+      <div class="form-group">
+        <label for="mapH">Map Height (ft)</label>
+        <input type="number" id="mapH" value="60" min="10" max="200" />
+      </div>
+      <div class="form-group">
+        <label for="numRounds">Max Rounds</label>
+        <input type="number" id="numRounds" value="20" min="1" max="100" />
+      </div>
+    </div>
+    <hr class="rune" />
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+      <label style="display:inline;margin:0">Monster Groups</label>
+      <button class="btn btn-sm" onclick="addMonsterRow()">+ Add Group</button>
+    </div>
+    <div id="monsterRows"></div>
+    <div class="nav-row">
+      <button class="btn" onclick="goStep(4)">&larr; Back</button>
+      <button class="btn btn-primary" onclick="goStep(6)">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- STEP 6: Review & Export                                -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="panel" id="step6">
+    <h2>VI · Review &amp; Export</h2>
+    <p class="hint">Download your scenario JSON to run with <code>python main.py sim your_scenario.json</code>. No server required.</p>
+    <div class="notice">The file will be saved to your Downloads folder. Open a terminal in this project and run the command above to simulate.</div>
+    <div class="json-box" id="jsonPreview"></div>
+    <div style="margin-top:1rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="downloadScenario()">&#8659; Download JSON</button>
+      <button class="btn" onclick="refreshPreview()">Refresh Preview</button>
+    </div>
+
+    <div class="api-section">
+      <h3>Optional: Validate &amp; Simulate via API</h3>
+      <p class="hint">Only needed if you want to run the simulation from this page. Requires <code>uvicorn api:app --reload</code> running locally.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="apiUrl">API URL</label>
+          <input type="text" id="apiUrl" value="/api/dnd" />
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem">
+          <button class="btn btn-sm" onclick="validateChar()">Validate Character</button>
+          <button class="btn btn-sm btn-primary" onclick="runSim()">Run Simulation</button>
+        </div>
+      </div>
+      <div id="apiStatus"></div>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn" onclick="goStep(5)">&larr; Back</button>
+      <span></span>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  EMBEDDED DATA  (no server needed)
+// ═══════════════════════════════════════════════════════════════
+
+const RACES_DATA = {
+  "Human":             { stat_bonus:{Str:1,Dex:1,Con:1,Int:1,Wis:1,Cha:1}, speed:30, weapon_profs:[], armor_profs:[], traits:["Extra Language","Extra Skill"], description:"Versatile. +1 to every ability score." },
+  "High Elf":          { stat_bonus:{Dex:2,Int:1}, speed:30, weapon_profs:["Longsword","Shortsword","Longbow","Shortbow"], armor_profs:[], traits:["Darkvision 60ft","Fey Ancestry","Trance","Keen Senses","Cantrip"], description:"+2 Dex, +1 Int. Elven weapon training." },
+  "Wood Elf":          { stat_bonus:{Dex:2,Wis:1}, speed:35, weapon_profs:["Longsword","Shortsword","Longbow","Shortbow"], armor_profs:[], traits:["Darkvision 60ft","Fleet of Foot (35ft)","Mask of the Wild","Fey Ancestry"], description:"+2 Dex, +1 Wis. Faster, stealthy in nature." },
+  "Mountain Dwarf":    { stat_bonus:{Str:2,Con:2}, speed:25, weapon_profs:["Battleaxe","Handaxe","Warhammer"], armor_profs:["light","medium"], traits:["Darkvision 60ft","Dwarven Resilience","Stonecunning","Light & Medium Armor"], description:"+2 Str, +2 Con. Hardy warriors with armor training." },
+  "Hill Dwarf":        { stat_bonus:{Con:2,Wis:1}, speed:25, weapon_profs:["Battleaxe","Handaxe","Warhammer"], armor_profs:[], traits:["Darkvision 60ft","Dwarven Resilience","Stonecunning","Dwarven Toughness (+1 HP/level)"], description:"+2 Con, +1 Wis. Wise and enduring." },
+  "Lightfoot Halfling":{ stat_bonus:{Dex:2,Cha:1}, speed:25, weapon_profs:[], armor_profs:[], traits:["Lucky","Brave","Halfling Nimbleness","Naturally Stealthy"], description:"+2 Dex, +1 Cha. Lucky and difficult to spot." },
+  "Stout Halfling":    { stat_bonus:{Dex:2,Con:1}, speed:25, weapon_profs:[], armor_profs:[], traits:["Lucky","Brave","Halfling Nimbleness","Stout Resilience (poison)"], description:"+2 Dex, +1 Con. Tougher halfling variant." },
+  "Half-Elf":          { stat_bonus:{Cha:2}, flexible:{choose:2,amount:1,exclude:["Cha"]}, speed:30, weapon_profs:[], armor_profs:[], traits:["Darkvision 60ft","Fey Ancestry","Skill Versatility (2 skills)"], description:"+2 Cha, +1 to two other ability scores of your choice." },
+  "Half-Orc":          { stat_bonus:{Str:2,Con:1}, speed:30, weapon_profs:[], armor_profs:[], traits:["Darkvision 60ft","Menacing (Intimidation)","Relentless Endurance","Savage Attacks"], description:"+2 Str, +1 Con. Fierce and tenacious." },
+  "Tiefling":          { stat_bonus:{Int:1,Cha:2}, speed:30, weapon_profs:[], armor_profs:[], traits:["Darkvision 60ft","Hellish Resistance (fire)","Infernal Legacy (spells)"], description:"+1 Int, +2 Cha. Fire resistance and innate magic." },
+  "Dragonborn":        { stat_bonus:{Str:2,Cha:1}, speed:30, weapon_profs:[], armor_profs:[], traits:["Draconic Ancestry","Breath Weapon","Damage Resistance"], description:"+2 Str, +1 Cha. Breath weapon and resistance." },
+  "Forest Gnome":      { stat_bonus:{Int:2,Dex:1}, speed:25, weapon_profs:[], armor_profs:[], traits:["Darkvision 60ft","Gnome Cunning","Natural Illusionist","Speak with Beasts"], description:"+2 Int, +1 Dex. Clever and in tune with nature." },
+  "Rock Gnome":        { stat_bonus:{Int:2,Con:1}, speed:25, weapon_profs:[], armor_profs:[], traits:["Darkvision 60ft","Gnome Cunning","Artificer's Lore","Tinker"], description:"+2 Int, +1 Con. Inventive and scholarly." }
+};
+
+const CLASSES_DATA = {
+  "Barbarian": {
+    hit_die:12, saving_throws:["Strength","Constitution"],
+    armor_proficiencies:["light","medium","shields"], weapon_proficiencies:["simple","martial"],
+    features_by_level:{
+      "1":[{name:"Rage"},{name:"Unarmored Defense",desc:"AC = 10 + DEX mod + CON mod when not wearing armor."}],
+      "2":[{name:"Reckless Attack"},{name:"Danger Sense"}],
+      "3":[{name:"Primal Path",options:["Berserker","Bear Totem"]}],
+      "4":[{name:"ASI"}], "5":[{name:"Extra Attack"},{name:"Fast Movement"}],
+      "7":[{name:"Feral Instinct"}], "8":[{name:"ASI"}], "9":[{name:"Brutal Critical"}],
+      "11":[{name:"Relentless Rage"}], "12":[{name:"ASI"}], "13":[{name:"Brutal Critical II"}],
+      "15":[{name:"Persistent Rage"}], "16":[{name:"ASI"}], "17":[{name:"Brutal Critical III"}],
+      "19":[{name:"ASI"}], "20":[{name:"Primal Champion"}]
+    },
+    subclasses:{
+      "Berserker":   {"3":[{name:"Frenzy"}],"6":[{name:"Mindless Rage"}],"14":[{name:"Retaliation"}]},
+      "Bear Totem":  {"3":[{name:"Bear Totem Spirit"}],"6":[{name:"Aspect of the Beast"}],"14":[{name:"Totemic Attunement"}]}
+    }
+  },
+  "Fighter": {
+    hit_die:10, saving_throws:["Strength","Constitution"],
+    armor_proficiencies:["all","shields"], weapon_proficiencies:["simple","martial"],
+    features_by_level:{
+      "1":[{name:"Fighting Style",options:["Archery","Defense","Dueling","Great Weapon Fighting","Protection","Two-Weapon Fighting","Blind Fighting","Thrown Weapon Fighting","Unarmed Fighting"]},{name:"Second Wind"}],
+      "2":[{name:"Action Surge"}],
+      "3":[{name:"Martial Archetype",options:["Champion"]}],
+      "4":[{name:"ASI"}], "5":[{name:"Extra Attack"}], "6":[{name:"ASI"}],
+      "8":[{name:"ASI"}], "9":[{name:"Indomitable"}], "11":[{name:"Extra Attack II"}],
+      "12":[{name:"ASI"}], "13":[{name:"Indomitable II"}], "14":[{name:"ASI"}],
+      "16":[{name:"ASI"}], "17":[{name:"Action Surge II"},{name:"Indomitable III"}],
+      "19":[{name:"ASI"}], "20":[{name:"Extra Attack III"}]
+    },
+    subclasses:{
+      "Champion": {
+        "3":[{name:"Improved Critical"}],
+        "7":[{name:"Remarkable Athlete"}],
+        "10":[{name:"Fighting Style",options:["Archery","Defense","Dueling","Great Weapon Fighting","Protection","Two-Weapon Fighting"]}],
+        "15":[{name:"Superior Critical"}],
+        "18":[{name:"Survivor"}]
+      }
+    }
+  },
+  "Paladin": {
+    hit_die:10, saving_throws:["Wisdom","Charisma"],
+    armor_proficiencies:["all","shields"], weapon_proficiencies:["simple","martial"],
+    features_by_level:{
+      "1":[{name:"Divine Sense"},{name:"Lay on Hands"}],
+      "2":[{name:"Fighting Style",options:["Defense","Dueling","Great Weapon Fighting","Protection","Blessed Warrior","Blind Fighting"]},{name:"Spellcasting"},{name:"Divine Smite"}],
+      "3":[{name:"Divine Health"},{name:"Sacred Oath",options:["Devotion","Vengeance","Ancients"]}],
+      "4":[{name:"ASI"}],
+      "5":[{name:"Extra Attack"},{name:"Destroy Undead"}],
+      "6":[{name:"Aura of Protection"}],
+      "7":[{name:"Sacred Oath Feature"}],
+      "8":[{name:"ASI"}],
+      "9":[{name:"Oath Spells Lv3"}],
+      "10":[{name:"Aura of Courage"}],
+      "11":[{name:"Improved Divine Smite"}],
+      "12":[{name:"ASI"}],
+      "14":[{name:"Cleansing Touch"}],
+      "16":[{name:"ASI"}],
+      "19":[{name:"ASI"}],
+      "20":[{name:"Sacred Oath Capstone"}]
+    },
+    subclasses:{
+      "Devotion":  {"3":[{name:"Sacred Weapon"},{name:"Turn the Unholy"}],"7":[{name:"Aura of Devotion"}],"15":[{name:"Purity of Spirit"}],"20":[{name:"Holy Nimbus"}]},
+      "Vengeance": {"3":[{name:"Abjure Enemy"},{name:"Vow of Enmity"}],"7":[{name:"Relentless Avenger"}],"15":[{name:"Soul of Vengeance"}],"20":[{name:"Avenging Angel"}]},
+      "Ancients":  {"3":[{name:"Nature's Wrath"},{name:"Turn the Faithless"}],"7":[{name:"Aura of Warding"}],"15":[{name:"Undying Sentinel"}],"20":[{name:"Elder Champion"}]}
+    }
+  },
+  "Ranger": {
+    hit_die:10, saving_throws:["Strength","Dexterity"],
+    armor_proficiencies:["light","medium","shields"], weapon_proficiencies:["simple","martial"],
+    features_by_level:{
+      "1":[{name:"Favored Enemy",options:["Beasts","Humanoids","Undead","Fiends","Aberrations"]},{name:"Natural Explorer",options:["Arctic","Coast","Desert","Forest","Grassland","Mountain","Swamp","Underdark"]}],
+      "2":[{name:"Fighting Style",options:["Archery","Defense","Dueling","Two-Weapon Fighting"]},{name:"Spellcasting"}],
+      "3":[{name:"Ranger Archetype",options:["Hunter","Beast Master"]},{name:"Primeval Awareness"}],
+      "4":[{name:"ASI"}], "5":[{name:"Extra Attack"}], "6":[{name:"Favored Enemy II"},{name:"Natural Explorer II"}],
+      "7":[{name:"Ranger Archetype Feature"}], "8":[{name:"ASI"},{name:"Land's Stride"}],
+      "10":[{name:"Natural Explorer III"},{name:"Hide in Plain Sight"}],
+      "11":[{name:"Ranger Archetype Feature II"}],
+      "12":[{name:"ASI"}], "14":[{name:"Favored Enemy III"},{name:"Vanish"}],
+      "15":[{name:"Ranger Archetype Feature III"}],
+      "16":[{name:"ASI"}], "18":[{name:"Feral Senses"}],
+      "19":[{name:"ASI"}], "20":[{name:"Foe Slayer"}]
+    },
+    subclasses:{
+      "Hunter":      {"3":[{name:"Hunter's Prey",options:["Colossus Slayer","Giant Killer","Horde Breaker"]}],"7":[{name:"Defensive Tactics",options:["Escape the Horde","Multiattack Defense","Steel Will"]}],"11":[{name:"Multiattack",options:["Volley","Whirlwind Attack"]}],"15":[{name:"Superior Hunter's Defense",options:["Evasion","Stand Against the Tide","Uncanny Dodge"]}]},
+      "Beast Master":{"3":[{name:"Ranger's Companion"}],"7":[{name:"Exceptional Training"}],"11":[{name:"Bestial Fury"}],"15":[{name:"Share Spells"}]}
+    }
+  },
+  "Rogue": {
+    hit_die:8, saving_throws:["Dexterity","Intelligence"],
+    armor_proficiencies:["light"], weapon_proficiencies:["simple","hand crossbows","longswords","rapiers","shortswords"],
+    features_by_level:{
+      "1":[{name:"Expertise"},{name:"Sneak Attack"},{name:"Thieves' Cant"}],
+      "2":[{name:"Cunning Action"}],
+      "3":[{name:"Roguish Archetype",options:["Thief","Assassin","Arcane Trickster"]}],
+      "4":[{name:"ASI"}], "5":[{name:"Uncanny Dodge"}], "6":[{name:"Expertise II"}],
+      "7":[{name:"Evasion"}], "8":[{name:"ASI"}], "10":[{name:"ASI"}],
+      "11":[{name:"Reliable Talent"}], "12":[{name:"ASI"}], "14":[{name:"Blindsense"}],
+      "15":[{name:"Slippery Mind"}], "16":[{name:"ASI"}], "18":[{name:"Elusive"}],
+      "19":[{name:"ASI"}], "20":[{name:"Stroke of Luck"}]
+    },
+    subclasses:{
+      "Thief":           {"3":[{name:"Fast Hands"},{name:"Second-Story Work"}],"9":[{name:"Supreme Sneak"}],"13":[{name:"Use Magic Device"}],"17":[{name:"Thief's Reflexes"}]},
+      "Assassin":        {"3":[{name:"Bonus Proficiencies"},{name:"Assassinate"}],"9":[{name:"Infiltration Expertise"}],"13":[{name:"Impostor"}],"17":[{name:"Death Strike"}]},
+      "Arcane Trickster": {"3":[{name:"Spellcasting"},{name:"Mage Hand Legerdemain"}],"9":[{name:"Magical Ambush"}],"13":[{name:"Versatile Trickster"}],"17":[{name:"Spell Thief"}]}
+    }
+  },
+  "Warlock": {
+    hit_die:8, saving_throws:["Wisdom","Charisma"],
+    armor_proficiencies:["light"], weapon_proficiencies:["simple"],
+    features_by_level:{
+      "1":[{name:"Otherworldly Patron",options:["Fiend","Great Old One","Archfey"]},{name:"Pact Magic"}],
+      "2":[{name:"Eldritch Invocations"}],
+      "3":[{name:"Pact Boon",options:["Pact of the Blade","Pact of the Chain","Pact of the Tome"]}],
+      "4":[{name:"ASI"}], "5":[{name:"Eldritch Invocations II"}],
+      "6":[{name:"Otherworldly Patron Feature"}], "7":[{name:"Eldritch Invocations III"}],
+      "8":[{name:"ASI"}], "9":[{name:"Eldritch Invocations IV"}],
+      "10":[{name:"Otherworldly Patron Feature II"}], "11":[{name:"Mystic Arcanum (6th)"}],
+      "12":[{name:"ASI"},{name:"Eldritch Invocations V"}], "13":[{name:"Mystic Arcanum (7th)"}],
+      "14":[{name:"Otherworldly Patron Feature III"}], "15":[{name:"Mystic Arcanum (8th)"},{name:"Eldritch Invocations VI"}],
+      "16":[{name:"ASI"}], "17":[{name:"Mystic Arcanum (9th)"}],
+      "18":[{name:"Eldritch Invocations VII"}], "19":[{name:"ASI"}],
+      "20":[{name:"Eldritch Master"}]
+    },
+    subclasses:{
+      "Fiend":       {"1":[{name:"Dark One's Blessing"},{name:"Expanded Spell List"}],"6":[{name:"Dark One's Own Luck"}],"10":[{name:"Fiendish Resilience"}],"14":[{name:"Hurl Through Hell"}]},
+      "Great Old One":{"1":[{name:"Awakened Mind"},{name:"Expanded Spell List"}],"6":[{name:"Entropic Ward"}],"10":[{name:"Thought Shield"}],"14":[{name:"Create Thrall"}]},
+      "Archfey":     {"1":[{name:"Fey Presence"},{name:"Expanded Spell List"}],"6":[{name:"Misty Escape"}],"10":[{name:"Beguiling Defenses"}],"14":[{name:"Dark Delirium"}]}
+    }
+  }
+};
+
+const ITEMS_DATA = {
+  weapons:[
+    {name:"Longbow",      damage_die:"1d8",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"range",  attack_bonus:0, damage_bonus:0},
+    {name:"Longbow+1",    damage_die:"1d8",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"range",  attack_bonus:1, damage_bonus:1},
+    {name:"Longbow+2",    damage_die:"1d8",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"range",  attack_bonus:2, damage_bonus:2},
+    {name:"Shortbow",     damage_die:"1d6",  damageType:"piercing",    ability:"Dex", weapon_type:"simple",  attack_type:"range",  attack_bonus:0, damage_bonus:0},
+    {name:"Hand Crossbow",damage_die:"1d6",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"range",  attack_bonus:0, damage_bonus:0},
+    {name:"Light Crossbow",damage_die:"1d8", damageType:"piercing",    ability:"Dex", weapon_type:"simple",  attack_type:"range",  attack_bonus:0, damage_bonus:0},
+    {name:"Longsword",    damage_die:"1d8",  damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Longsword+1",  damage_die:"1d8",  damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:1, damage_bonus:1},
+    {name:"Longsword+2",  damage_die:"1d8",  damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:2, damage_bonus:2},
+    {name:"Shortsword",   damage_die:"1d6",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Shortsword+1", damage_die:"1d6",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"melee",  attack_bonus:1, damage_bonus:1},
+    {name:"Rapier",       damage_die:"1d8",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Rapier+1",     damage_die:"1d8",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"melee",  attack_bonus:1, damage_bonus:1},
+    {name:"Rapier+2",     damage_die:"1d8",  damageType:"piercing",    ability:"Dex", weapon_type:"martial", attack_type:"melee",  attack_bonus:2, damage_bonus:2},
+    {name:"Dagger",       damage_die:"1d4",  damageType:"piercing",    ability:"Dex", weapon_type:"simple",  attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Dagger+1",     damage_die:"1d4",  damageType:"piercing",    ability:"Dex", weapon_type:"simple",  attack_type:"melee",  attack_bonus:1, damage_bonus:1},
+    {name:"Greatsword",   damage_die:"2d6",  damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Greatsword+1", damage_die:"2d6",  damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:1, damage_bonus:1},
+    {name:"Greatsword+2", damage_die:"2d6",  damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:2, damage_bonus:2},
+    {name:"Greataxe",     damage_die:"1d12", damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Greataxe+1",   damage_die:"1d12", damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:1, damage_bonus:1},
+    {name:"Greataxe+2",   damage_die:"1d12", damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:2, damage_bonus:2},
+    {name:"Battleaxe",    damage_die:"1d8",  damageType:"slashing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Handaxe",      damage_die:"1d6",  damageType:"slashing",    ability:"Str", weapon_type:"simple",  attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Warhammer",    damage_die:"1d8",  damageType:"bludgeoning", ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Warhammer+1",  damage_die:"1d8",  damageType:"bludgeoning", ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:1, damage_bonus:1},
+    {name:"Maul",         damage_die:"2d6",  damageType:"bludgeoning", ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Mace",         damage_die:"1d6",  damageType:"bludgeoning", ability:"Str", weapon_type:"simple",  attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Quarterstaff", damage_die:"1d6",  damageType:"bludgeoning", ability:"Str", weapon_type:"simple",  attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Spear",        damage_die:"1d6",  damageType:"piercing",    ability:"Str", weapon_type:"simple",  attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Javelin",      damage_die:"1d6",  damageType:"piercing",    ability:"Str", weapon_type:"simple",  attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Flail",        damage_die:"1d8",  damageType:"bludgeoning", ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0},
+    {name:"Morningstar",  damage_die:"1d8",  damageType:"piercing",    ability:"Str", weapon_type:"martial", attack_type:"melee",  attack_bonus:0, damage_bonus:0}
+  ],
+  armor:[
+    {name:"Leather Armor",    base_ac:11, armor_type:"light",  magic_bonus:0},
+    {name:"Studded Leather",  base_ac:12, armor_type:"light",  magic_bonus:0},
+    {name:"Studded Leather+1",base_ac:12, armor_type:"light",  magic_bonus:1},
+    {name:"Studded Leather+2",base_ac:12, armor_type:"light",  magic_bonus:2},
+    {name:"Scale Mail",       base_ac:14, armor_type:"medium", magic_bonus:0},
+    {name:"Breastplate",      base_ac:14, armor_type:"medium", magic_bonus:0},
+    {name:"Breastplate+1",    base_ac:14, armor_type:"medium", magic_bonus:1},
+    {name:"Half Plate",       base_ac:15, armor_type:"medium", magic_bonus:0},
+    {name:"Half Plate+1",     base_ac:15, armor_type:"medium", magic_bonus:1},
+    {name:"Chain Mail",       base_ac:16, armor_type:"heavy",  magic_bonus:0},
+    {name:"Chain Mail+1",     base_ac:16, armor_type:"heavy",  magic_bonus:1},
+    {name:"Plate",            base_ac:18, armor_type:"heavy",  magic_bonus:0},
+    {name:"Plate+1",          base_ac:18, armor_type:"heavy",  magic_bonus:1},
+    {name:"Shield",           base_ac:2,  armor_type:"shield", magic_bonus:0},
+    {name:"Shield+1",         base_ac:3,  armor_type:"shield", magic_bonus:0}
+  ],
+  trinkets:[
+    {name:"Bracers Of Archery", description:"+2 damage with longbows and shortbows."},
+    {name:"Ring of Protection",  description:"+1 AC and +1 to all saving throws."},
+    {name:"Cloak of Protection", description:"+1 AC and +1 to all saving throws."}
+  ]
+};
+
+const MONSTERS  = ["GOBLIN","ORC","HOBGOBLIN","BUGBEAR"];
+const WEAPON_ROLES = ["melee","range","mixed"];
+const STATS     = ["Str","Dex","Con","Int","Wis","Cha"];
+const SA_VALS   = [15,14,13,12,10,8];
+const PB_COST   = {8:0,9:1,10:2,11:3,12:4,13:5,14:7,15:9};
+const ROMAN     = ["","I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII","XIII","XIV","XV","XVI","XVII","XVIII","XIX","XX"];
+
+const FEATS_DATA = [
+  {name:"Alert",              prereq:null,           stat:null,         desc:"+5 to initiative. Cannot be surprised. Hidden attackers gain no advantage against you."},
+  {name:"Athlete",            prereq:null,           stat:"Str or Dex", desc:"Climbing costs no extra movement. Stand up uses only 5ft. Running jump needs only 5ft run-up."},
+  {name:"Actor",              prereq:null,           stat:"Cha",        desc:"Advantage on Deception/Performance when disguised. Mimic voices of creatures you've heard for 1 minute."},
+  {name:"Charger",            prereq:null,           stat:null,         desc:"When you Dash, bonus action melee attack (+5 damage) or shove (10ft)."},
+  {name:"Crossbow Expert",    prereq:null,           stat:null,         desc:"Ignore loading property. No disadvantage in melee. Bonus hand-crossbow attack after Attack action."},
+  {name:"Defensive Duelist",  prereq:"Dex 13",       stat:null,         desc:"Reaction: add proficiency bonus to AC against one melee attack while wielding a finesse weapon."},
+  {name:"Dual Wielder",       prereq:null,           stat:null,         desc:"+1 AC while wielding two melee weapons. Use non-light weapons for two-weapon fighting. Draw two weapons at once."},
+  {name:"Dungeon Delver",     prereq:null,           stat:null,         desc:"Adv on Perception/Investigation for secret doors and traps. Resistance to trap damage. Adv on saves vs traps."},
+  {name:"Durable",            prereq:null,           stat:"Con",        desc:"Minimum HP regained from a Hit Die equals twice your Con modifier (minimum 2)."},
+  {name:"Elemental Adept",    prereq:"Spellcasting", stat:null,         desc:"Choose a damage type. Your spells ignore resistance to it. Treat 1s as 2s on damage dice for that type."},
+  {name:"Grappler",           prereq:"Str 13",       stat:null,         desc:"Advantage on attacks vs creatures you're grappling. Can restrain a grappled creature (both restrained)."},
+  {name:"Great Weapon Master",prereq:null,           stat:null,         desc:"On crit or kill, make a bonus attack. Or take -5 to hit for +10 damage with a heavy weapon."},
+  {name:"Healer",             prereq:null,           stat:null,         desc:"Stabilize with a Medicine check. Use healer's kit: restore 1d6+4+HD HP once per creature per rest."},
+  {name:"Heavily Armored",    prereq:"Med Armor",    stat:"Str",        desc:"Gain proficiency with heavy armor."},
+  {name:"Heavy Armor Master", prereq:"Heavy Armor",  stat:"Str",        desc:"Non-magical bludgeoning, piercing, and slashing damage reduced by 3 while wearing heavy armor."},
+  {name:"Inspiring Leader",   prereq:"Cha 13",       stat:null,         desc:"10-min speech grants up to 6 creatures temp HP = your level + Cha modifier."},
+  {name:"Keen Mind",          prereq:null,           stat:"Int",        desc:"Always know compass north and hours until sunrise/set. Recall anything seen/heard in the past month."},
+  {name:"Lightly Armored",    prereq:null,           stat:"Str or Dex", desc:"Gain proficiency with light armor."},
+  {name:"Linguist",           prereq:null,           stat:"Int",        desc:"Learn 3 languages. Create written ciphers only you (or taught creatures) can decode."},
+  {name:"Lucky",              prereq:null,           stat:null,         desc:"3 luck points per long rest. Spend to add a d20 on attack/check/save (take higher), or force enemy reroll."},
+  {name:"Mage Slayer",        prereq:null,           stat:null,         desc:"Reaction attack when a nearby creature casts a spell. Adv on Con saves vs concentration. Casters near you have disadv on concentration."},
+  {name:"Magic Initiate",     prereq:null,           stat:null,         desc:"Choose a class: learn 2 cantrips and 1st-level spell from its list (spell cast once per long rest)."},
+  {name:"Martial Adept",      prereq:null,           stat:null,         desc:"Learn 2 Battle Master maneuvers. Gain one superiority die (d6) to use them."},
+  {name:"Medium Armor Master",prereq:"Med Armor",    stat:null,         desc:"No Stealth disadvantage in medium armor. Max Dex bonus to AC from medium armor increases to +3."},
+  {name:"Mobile",             prereq:null,           stat:null,         desc:"+10ft speed. Dash ignores difficult terrain. No opportunity attacks from creatures you attacked this turn."},
+  {name:"Moderately Armored", prereq:"Light Armor",  stat:"Str or Dex", desc:"Gain proficiency with medium armor and shields."},
+  {name:"Mounted Combatant",  prereq:null,           stat:null,         desc:"Adv on melee attacks vs unmounted creatures smaller than mount. Redirect attacks targeting mount to yourself."},
+  {name:"Observant",          prereq:null,           stat:"Int or Wis", desc:"+5 passive Perception and passive Investigation. If you can see a creature's mouth, you can read its lips."},
+  {name:"Polearm Master",     prereq:null,           stat:null,         desc:"Bonus action butt-end attack (1d4 bludgeoning). Opportunity attack when creatures enter your reach."},
+  {name:"Resilient",          prereq:null,           stat:"Any",        desc:"Gain proficiency in saving throws using the chosen ability score."},
+  {name:"Ritual Caster",      prereq:"Int or Wis 13",stat:null,         desc:"Learn ritual spells from one class list. Can only cast them as rituals (not as normal spells)."},
+  {name:"Savage Attacker",    prereq:null,           stat:null,         desc:"Once per turn, reroll a melee weapon's damage dice and take the higher result."},
+  {name:"Sentinel",           prereq:null,           stat:null,         desc:"Opportunity attacks reduce speed to 0. Reaction attack when ally nearby is attacked. Disengage doesn't prevent your attacks."},
+  {name:"Sharpshooter",       prereq:null,           stat:null,         desc:"No disadvantage at long range. Ignore half and 3/4 cover. Take -5 to hit for +10 damage with ranged weapons."},
+  {name:"Shield Master",      prereq:null,           stat:null,         desc:"Bonus action shove while wielding a shield. Add shield AC to Dex saves you succeed on (half damage = no damage)."},
+  {name:"Skilled",            prereq:null,           stat:null,         desc:"Gain proficiency in any 3 skills or tool sets of your choice."},
+  {name:"Skulker",            prereq:"Dex 13",       stat:null,         desc:"Hide when lightly obscured. Ranged miss doesn't reveal position. Dim light doesn't impose Perception disadvantage."},
+  {name:"Spell Sniper",       prereq:"Spellcasting", stat:null,         desc:"Double range of attack-roll spells. Ignore half and 3/4 cover. Learn one ranged attack cantrip."},
+  {name:"Tavern Brawler",     prereq:null,           stat:"Str or Con", desc:"Proficiency with improvised weapons and unarmed strikes (1d4). Grapple as bonus action after a hit."},
+  {name:"Tough",              prereq:null,           stat:null,         desc:"+2 max HP per level (retroactive from level 1). Max HP increases by 2 on each future level-up."},
+  {name:"War Caster",         prereq:"Spellcasting", stat:null,         desc:"Adv on Con saves for concentration. Somatic components with weapon/shield hands. Cast a spell as an opportunity attack."},
+  {name:"Weapon Master",      prereq:null,           stat:"Str or Dex", desc:"Gain proficiency with 4 weapons of your choice."}
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+
+let curStep   = 1;
+let statMode  = 'sa';
+let saVals    = {};  // stat → number (standard array assignments)
+let pbVals    = {};  // stat → number (point-buy)
+let mnVals    = {};  // stat → number (manual)
+let flexBonus = {};  // stat → +1 for Half-Elf flexible picks
+let featureChoices = {}; // "Class__lv__FeatureName" → option string
+let asiChoices     = {}; // level → {type:"2+0"|"1+1"|"feat", s1, s2, feat, featStat}
+let invSet    = new Set();
+let eqSet     = new Set();
+let monId     = 0;
+
+STATS.forEach(s => { saVals[s] = 10; pbVals[s] = 8; mnVals[s] = 10; });
+
+// ═══════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+
+function goStep(n) {
+  curStep = n;
+  document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('active', i+1 === n));
+  document.querySelectorAll('.wz-step').forEach(s => {
+    const sn = +s.dataset.step;
+    s.classList.toggle('active', sn === n);
+    s.classList.toggle('done',   sn < n);
+  });
+  if (n === 2) renderJourney();
+  if (n === 3) renderStatTable();
+  if (n === 4) renderEquipment();
+  if (n === 6) refreshPreview();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STEP 1 — Race cards
+// ═══════════════════════════════════════════════════════════════
+
+function initRaceGrid() {
+  const grid = document.getElementById('raceGrid');
+  grid.innerHTML = '';
+  Object.entries(RACES_DATA).forEach(([name, r]) => {
+    const bonuses = Object.entries(r.stat_bonus).map(([s,v]) => `${s} +${v}`).join(', ');
+    const d = document.createElement('div');
+    d.className = 'race-card';
+    d.dataset.race = name;
+    d.innerHTML = `<div class="rc-name">${name}</div>
+      <div class="rc-bonuses">${bonuses || 'No fixed bonus'} &bull; ${r.speed}ft</div>
+      <div class="rc-traits">${r.traits.slice(0,3).join(' &bull; ')}</div>`;
+    d.onclick = () => selectRace(name);
+    grid.appendChild(d);
+  });
+}
+
+function selectRace(name) {
+  document.querySelectorAll('.race-card').forEach(c => c.classList.toggle('selected', c.dataset.race === name));
+  const r = RACES_DATA[name];
+  const flexSec = document.getElementById('flexBonusSection');
+  flexBonus = {};
+  if (r.flexible) {
+    flexSec.style.display = 'block';
+    renderFlexBonus(r.flexible);
+  } else {
+    flexSec.style.display = 'none';
+  }
+  refreshStatTotals();
+}
+
+function getSelectedRace() {
+  const el = document.querySelector('.race-card.selected');
+  return el ? el.dataset.race : null;
+}
+
+function renderFlexBonus(flex) {
+  const row = document.getElementById('flexBonusRow');
+  row.innerHTML = '';
+  flexBonus = {};
+  for (let i = 0; i < flex.choose; i++) {
+    const lbl = document.createElement('label');
+    lbl.textContent = `+${flex.amount} to:`;
+    const sel = document.createElement('select');
+    sel.dataset.idx = i;
+    STATS.filter(s => !flex.exclude.includes(s)).forEach(s => {
+      const o = document.createElement('option'); o.value = s; o.textContent = s; sel.appendChild(o);
+    });
+    sel.value = STATS.filter(s => !flex.exclude.includes(s))[i] || STATS[0];
+    flexBonus[sel.value] = (flexBonus[sel.value]||0) + flex.amount;
+    sel.onchange = () => {
+      flexBonus = {};
+      row.querySelectorAll('select').forEach(s2 => {
+        flexBonus[s2.value] = (flexBonus[s2.value]||0) + flex.amount;
+      });
+      refreshStatTotals();
+    };
+    row.appendChild(lbl); row.appendChild(sel);
+  }
+}
+
+function onClassChange() {
+  featureChoices = {};
+  asiChoices = {};
+  if (curStep === 2) renderJourney();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STEP 2 — Level Journey
+// ═══════════════════════════════════════════════════════════════
+
+function renderJourney() {
+  const cls  = document.getElementById('classSelect').value;
+  const lv   = +document.getElementById('levelSlider').value;
+  const hint = document.getElementById('journeyHint');
+  const div  = document.getElementById('journeyDiv');
+
+  if (!cls) { hint.style.display=''; div.innerHTML=''; return; }
+  hint.style.display = 'none';
+  div.innerHTML = '';
+
+  const cd = CLASSES_DATA[cls];
+  let chosenSubclass = null;
+  // Peek at any existing subclass choice
+  for (const [key, val] of Object.entries(featureChoices)) {
+    if (isSubclassFeature(key)) { chosenSubclass = val; break; }
+  }
+
+  for (let lvl = 1; lvl <= lv; lvl++) {
+    const features = cd.features_by_level[String(lvl)] || [];
+    // Subclass features
+    let subFeatures = [];
+    if (chosenSubclass && cd.subclasses[chosenSubclass]) {
+      subFeatures = cd.subclasses[chosenSubclass][String(lvl)] || [];
+    }
+    const allFeatures = [...features, ...subFeatures];
+    if (!allFeatures.length) continue;
+
+    const card = document.createElement('div');
+    card.className = 'lv-card';
+    card.innerHTML = `<div class="lv-badge">${ROMAN[lvl]}</div>
+      <div class="lv-header">Level ${lvl}</div>
+      <div class="lv-features" id="lv-feats-${lvl}"></div>`;
+    div.appendChild(card);
+
+    const featsDiv = card.querySelector(`#lv-feats-${lvl}`);
+    allFeatures.forEach(f => {
+      if (f.name === 'ASI') {
+        renderAsi(featsDiv, lvl);
+      } else if (f.options) {
+        renderChoice(featsDiv, cls, lvl, f);
+      } else {
+        const chip = document.createElement('span');
+        chip.className = 'feat-chip';
+        chip.textContent = f.name + (f.desc ? '' : '');
+        if (f.desc) chip.title = f.desc;
+        featsDiv.appendChild(chip);
+      }
+    });
+  }
+}
+
+function isSubclassFeature(key) {
+  // Keys look like "Fighter__3__Martial Archetype" etc.
+  const subclassFeatureNames = ["Primal Path","Martial Archetype","Sacred Oath","Ranger Archetype","Roguish Archetype","Otherworldly Patron"];
+  return subclassFeatureNames.some(n => key.includes('__' + n));
+}
+
+function renderChoice(parent, cls, lvl, f) {
+  const key = `${cls}__${lvl}__${f.name}`;
+  const wrap = document.createElement('div');
+  wrap.className = 'feat-choice';
+  const lbl = document.createElement('label');
+  lbl.textContent = f.name + ':';
+  const sel = document.createElement('select');
+  f.options.forEach(opt => {
+    const o = document.createElement('option'); o.value = opt; o.textContent = opt; sel.appendChild(o);
+  });
+  if (featureChoices[key]) sel.value = featureChoices[key];
+  else featureChoices[key] = sel.value;
+  const isSub = isSubclassFeature(key);
+  sel.onchange = () => {
+    featureChoices[key] = sel.value;
+    if (isSub) renderJourney(); // re-render to show subclass features
+  };
+  wrap.appendChild(lbl); wrap.appendChild(sel);
+  parent.appendChild(wrap);
+}
+
+function renderAsi(parent, lvl) {
+  const key = String(lvl);
+  if (!asiChoices[key]) asiChoices[key] = {type:'2+0', s1:'Str', s2:'Dex', feat:FEATS_DATA[0].name, featStat:'Str'};
+  const ac = asiChoices[key];
+
+  const wrap = document.createElement('div');
+  wrap.className = 'asi-widget';
+  wrap.style.flexWrap = 'wrap';
+
+  // Type selector
+  const typeSel = document.createElement('select');
+  [{v:'2+0',l:'+2 to one stat'},{v:'1+1',l:'+1 to two stats'},{v:'feat',l:'Take a Feat'}].forEach(({v,l}) => {
+    const o = document.createElement('option'); o.value=v; o.textContent=l; typeSel.appendChild(o);
+  });
+  typeSel.value = ac.type;
+
+  // ASI stat selectors
+  const s1Sel = makeStatSelect(ac.s1 || 'Str');
+  const andSpan = document.createElement('span'); andSpan.textContent = '& +1';
+  const s2Sel = makeStatSelect(ac.s2 || 'Dex');
+
+  // Feat selector
+  const featSel = document.createElement('select');
+  featSel.style.cssText = 'width:auto;min-width:190px;padding:0.2rem 0.5rem;font-size:0.85rem';
+  FEATS_DATA.forEach(f => {
+    const o = document.createElement('option');
+    o.value = f.name;
+    o.textContent = f.name + (f.prereq ? ` (${f.prereq})` : '');
+    o.title = f.desc;
+    featSel.appendChild(o);
+  });
+  featSel.value = ac.feat || FEATS_DATA[0].name;
+  if (!ac.feat) ac.feat = featSel.value;
+
+  // Feat stat bonus UI (for feats like Resilient, Athlete, etc.)
+  const featStatLbl = document.createElement('span');
+  featStatLbl.style.cssText = 'font-size:0.82rem;color:var(--gold-dim)';
+  const featStatSel = makeStatSelect(ac.featStat || 'Str');
+
+  // Feat description tooltip row
+  const featDesc = document.createElement('div');
+  featDesc.style.cssText = 'width:100%;font-size:0.78rem;color:var(--gold-dim);font-style:italic;margin-top:0.25rem;padding-left:0.25rem';
+
+  function updateFeatDesc() {
+    const fd = FEATS_DATA.find(f => f.name === ac.feat);
+    featDesc.textContent = fd ? fd.desc : '';
+  }
+
+  function updateVisibility() {
+    const isFeat = ac.type === 'feat';
+    const is11   = ac.type === '1+1';
+    s1Sel.style.display    = isFeat ? 'none' : '';
+    andSpan.style.display  = is11   ? '' : 'none';
+    s2Sel.style.display    = is11   ? '' : 'none';
+    featSel.style.display  = isFeat ? '' : 'none';
+    featDesc.style.display = isFeat ? '' : 'none';
+    if (isFeat) {
+      const fd = FEATS_DATA.find(f => f.name === ac.feat);
+      const hasStat = fd && fd.stat;
+      featStatLbl.style.display = hasStat ? '' : 'none';
+      featStatSel.style.display = hasStat ? '' : 'none';
+      if (hasStat) {
+        featStatLbl.textContent = `+1 (${fd.stat}):`;
+        refillFeatStatSel(featStatSel, fd.stat, ac.featStat);
+      }
+      updateFeatDesc();
+    } else {
+      featStatLbl.style.display = 'none';
+      featStatSel.style.display = 'none';
+    }
+  }
+
+  const lbl = document.createElement('label'); lbl.textContent = 'ASI:';
+  wrap.appendChild(lbl);
+  wrap.appendChild(typeSel);
+  wrap.appendChild(s1Sel);
+  wrap.appendChild(andSpan);
+  wrap.appendChild(s2Sel);
+  wrap.appendChild(featSel);
+  wrap.appendChild(featStatLbl);
+  wrap.appendChild(featStatSel);
+  wrap.appendChild(featDesc);
+  parent.appendChild(wrap);
+
+  updateVisibility();
+
+  typeSel.onchange = () => {
+    ac.type = typeSel.value;
+    updateVisibility();
+    refreshStatTotals();
+  };
+  s1Sel.onchange = () => { ac.s1 = s1Sel.value; refreshStatTotals(); };
+  s2Sel.onchange = () => { ac.s2 = s2Sel.value; refreshStatTotals(); };
+  featSel.onchange = () => {
+    ac.feat = featSel.value;
+    const fd = FEATS_DATA.find(f => f.name === ac.feat);
+    if (fd && fd.stat) {
+      refillFeatStatSel(featStatSel, fd.stat, ac.featStat);
+      ac.featStat = featStatSel.value;
+    }
+    updateVisibility();
+    refreshStatTotals();
+  };
+  featStatSel.onchange = () => { ac.featStat = featStatSel.value; refreshStatTotals(); };
+}
+
+function refillFeatStatSel(sel, statDesc, current) {
+  const map = {
+    'Str or Dex': ['Str','Dex'], 'Str or Con': ['Str','Con'],
+    'Int or Wis': ['Int','Wis'], 'Str': ['Str'], 'Dex': ['Dex'],
+    'Con': ['Con'], 'Int': ['Int'], 'Wis': ['Wis'], 'Cha': ['Cha']
+  };
+  const valid = map[statDesc] || STATS;
+  sel.innerHTML = '';
+  valid.forEach(s => { const o = document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
+  sel.value = valid.includes(current) ? current : valid[0];
+}
+
+function makeStatSelect(val) {
+  const sel = document.createElement('select');
+  sel.style.cssText = 'width:auto;min-width:90px;padding:0.2rem 0.4rem;font-size:0.85rem';
+  STATS.forEach(s => { const o = document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
+  sel.value = val;
+  return sel;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STEP 3 — Ability Scores
+// ═══════════════════════════════════════════════════════════════
+
+function setMode(m) {
+  statMode = m;
+  document.querySelectorAll('.mode-tab').forEach((t,i) => t.classList.toggle('active', ['sa','pb','mn'][i] === m));
+  renderStatTable();
+}
+
+function renderStatTable() {
+  const body  = document.getElementById('statBody');
+  const desc  = document.getElementById('modeDesc');
+  const pbBud = document.getElementById('pbBudget');
+  body.innerHTML = '';
+
+  if (statMode === 'sa') {
+    desc.textContent = 'Assign the standard array values (15, 14, 13, 12, 10, 8) to your six ability scores.';
+    pbBud.style.display = 'none';
+    // Base row — dropdowns
+    const baseRow = document.createElement('tr');
+    baseRow.innerHTML = `<td class="row-label">Base</td>`;
+    STATS.forEach(s => {
+      const td = document.createElement('td');
+      const sel = document.createElement('select');
+      sel.style.cssText = 'width:70px;padding:0.2rem;font-size:0.9rem';
+      SA_VALS.forEach(v => { const o = document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); });
+      sel.value = saVals[s];
+      sel.onchange = () => { saVals[s] = +sel.value; refreshStatTotals(); };
+      td.appendChild(sel); baseRow.appendChild(td);
+    });
+    body.appendChild(baseRow);
+  } else if (statMode === 'pb') {
+    desc.textContent = 'Spend 27 points. Each score costs: 8=0, 9=1, 10=2, 11=3, 12=4, 13=5, 14=7, 15=9.';
+    pbBud.style.display = '';
+    const baseRow = document.createElement('tr');
+    baseRow.innerHTML = `<td class="row-label">Base</td>`;
+    STATS.forEach(s => {
+      const td = document.createElement('td');
+      const inp = document.createElement('input');
+      inp.type='number'; inp.min=8; inp.max=15; inp.value=pbVals[s];
+      inp.style.cssText = 'width:60px;padding:0.2rem;text-align:center';
+      inp.oninput = () => { pbVals[s] = Math.min(15, Math.max(8, +inp.value||8)); refreshStatTotals(); updatePBBudget(); };
+      td.appendChild(inp); baseRow.appendChild(td);
+    });
+    body.appendChild(baseRow);
+    updatePBBudget();
+  } else {
+    desc.textContent = 'Enter any values you like. Standard stats range from 1-20 (or higher with magic).';
+    pbBud.style.display = 'none';
+    const baseRow = document.createElement('tr');
+    baseRow.innerHTML = `<td class="row-label">Base</td>`;
+    STATS.forEach(s => {
+      const td = document.createElement('td');
+      const inp = document.createElement('input');
+      inp.type='number'; inp.min=1; inp.max=30; inp.value=mnVals[s];
+      inp.style.cssText = 'width:60px;padding:0.2rem;text-align:center';
+      inp.oninput = () => { mnVals[s] = +inp.value||10; refreshStatTotals(); };
+      td.appendChild(inp); baseRow.appendChild(td);
+    });
+    body.appendChild(baseRow);
+  }
+
+  // Bonuses row (read-only)
+  const bonRow = document.createElement('tr');
+  bonRow.innerHTML = `<td class="row-label">Bonuses</td>`;
+  STATS.forEach(s => { const td = document.createElement('td'); td.id=`bon-${s}`; td.style.color='#7eaecb'; bonRow.appendChild(td); });
+  body.appendChild(bonRow);
+
+  // Total row
+  const totRow = document.createElement('tr');
+  totRow.innerHTML = `<td class="row-label">Total</td>`;
+  STATS.forEach(s => { const td = document.createElement('td'); td.id=`tot-${s}`; td.className='stat-total'; totRow.appendChild(td); });
+  body.appendChild(totRow);
+
+  // Modifier row
+  const modRow = document.createElement('tr');
+  modRow.innerHTML = `<td class="row-label">Modifier</td>`;
+  STATS.forEach(s => { const td = document.createElement('td'); td.id=`mod-${s}`; td.className='stat-mod'; modRow.appendChild(td); });
+  body.appendChild(modRow);
+
+  refreshStatTotals();
+}
+
+function updatePBBudget() {
+  const spent = STATS.reduce((acc,s) => acc + (PB_COST[pbVals[s]]||0), 0);
+  const rem = 27 - spent;
+  const el = document.getElementById('pbBudget');
+  el.textContent = `Points spent: ${spent} / 27  (${rem >= 0 ? rem + ' remaining' : Math.abs(rem) + ' over budget'})`;
+  el.style.color = rem < 0 ? '#e07070' : 'var(--gold-dim)';
+}
+
+function getBaseStats() {
+  const base = {};
+  if (statMode === 'sa')       STATS.forEach(s => base[s] = saVals[s]);
+  else if (statMode === 'pb')  STATS.forEach(s => base[s] = pbVals[s]);
+  else                         STATS.forEach(s => base[s] = mnVals[s]);
+  return base;
+}
+
+function getRaceBonuses() {
+  const bon = {}; STATS.forEach(s => bon[s] = 0);
+  const rn = getSelectedRace();
+  if (!rn) return bon;
+  const r = RACES_DATA[rn];
+  Object.entries(r.stat_bonus).forEach(([s,v]) => bon[s] = (bon[s]||0) + v);
+  Object.entries(flexBonus).forEach(([s,v]) => bon[s] = (bon[s]||0) + v);
+  return bon;
+}
+
+function getAsiBonuses() {
+  const bon = {}; STATS.forEach(s => bon[s] = 0);
+  Object.values(asiChoices).forEach(ac => {
+    if (ac.type === 'feat') {
+      if (ac.featStat && STATS.includes(ac.featStat)) bon[ac.featStat] = (bon[ac.featStat]||0) + 1;
+    } else {
+      if (ac.s1) bon[ac.s1] = (bon[ac.s1]||0) + (ac.type === '2+0' ? 2 : 1);
+      if (ac.type === '1+1' && ac.s2) bon[ac.s2] = (bon[ac.s2]||0) + 1;
+    }
+  });
+  return bon;
+}
+
+function getFinalStats() {
+  const base = getBaseStats();
+  const race = getRaceBonuses();
+  const asi  = getAsiBonuses();
+  const final = {};
+  STATS.forEach(s => final[s] = (base[s]||10) + (race[s]||0) + (asi[s]||0));
+  return final;
+}
+
+function refreshStatTotals() {
+  const base = getBaseStats();
+  const race = getRaceBonuses();
+  const asi  = getAsiBonuses();
+  STATS.forEach(s => {
+    const bonEl = document.getElementById(`bon-${s}`);
+    const totEl = document.getElementById(`tot-${s}`);
+    const modEl = document.getElementById(`mod-${s}`);
+    if (!totEl) return;
+    const totalBonus = (race[s]||0) + (asi[s]||0);
+    const total = (base[s]||10) + totalBonus;
+    const parts = [];
+    if (race[s]) parts.push(`Race +${race[s]}`);
+    if (asi[s])  parts.push(`ASI +${asi[s]}`);
+    if (bonEl) bonEl.textContent = totalBonus > 0 ? `+${totalBonus}` : (totalBonus < 0 ? totalBonus : '—');
+    if (totEl) totEl.textContent = total;
+    if (modEl) modEl.textContent = modStr(total);
+  });
+}
+
+function modStr(v) { const m = Math.floor((v-10)/2); return m >= 0 ? `+${m}` : `${m}`; }
+
+// ═══════════════════════════════════════════════════════════════
+//  STEP 4 — Equipment
+// ═══════════════════════════════════════════════════════════════
+
+function renderEquipment() {
+  const cls = document.getElementById('classSelect').value;
+  const rn  = getSelectedRace();
+  const container = document.getElementById('eqContent');
+  container.innerHTML = '';
+
+  function canUseWeapon(w) {
+    if (!cls) return true;
+    const cd = CLASSES_DATA[cls];
+    const wp = cd.weapon_proficiencies;
+    const rwp = rn ? (RACES_DATA[rn].weapon_profs || []) : [];
+    const allWp = [...wp, ...rwp];
+    const wname = w.name.toLowerCase().replace(/\+\d$/, '').trim();
+    for (const p of allWp) {
+      const pl = p.toLowerCase();
+      if (pl === 'simple' && w.weapon_type === 'simple') return true;
+      if (pl === 'martial' && w.weapon_type === 'martial') return true;
+      if (wname.startsWith(pl.replace(/s$/, ''))) return true;
+      if (pl === wname) return true;
+    }
+    return false;
+  }
+
+  function canUseArmor(a) {
+    if (!cls) return true;
+    const cd = CLASSES_DATA[cls];
+    const ap = cd.armor_proficiencies;
+    const rap = rn ? (RACES_DATA[rn].armor_profs || []) : [];
+    const allAp = [...ap, ...rap];
+    if (allAp.includes('all')) return true;
+    if (allAp.includes(a.armor_type)) return true;
+    return false;
+  }
+
+  function makeSection(title, items, usableFn) {
+    const sec = document.createElement('div');
+    sec.className = 'eq-section';
+    sec.innerHTML = `<h3>${title}</h3><div class="item-list" id="il-${title.replace(/\s/g,'_')}"></div>`;
+    container.appendChild(sec);
+    const list = sec.querySelector('.item-list');
+    items.forEach(item => {
+      const usable = usableFn ? usableFn(item) : true;
+      const btn = document.createElement('button');
+      btn.className = 'item-btn' + (usable ? '' : ' locked');
+      btn.textContent = item.name;
+      if (item.damage_die) btn.title = `${item.damage_die} ${item.damageType} (${item.weapon_type})`;
+      if (item.base_ac)    btn.title = `AC ${item.base_ac} (${item.armor_type})`;
+      if (item.description) btn.title = item.description;
+      if (!usable) { btn.disabled = true; btn.title += ' — not proficient'; }
+      else {
+        if (invSet.has(item.name)) btn.classList.add('in-inv');
+        if (eqSet.has(item.name)) btn.classList.add('equipped');
+        btn.onclick = () => toggleItem(item.name, btn);
+      }
+      list.appendChild(btn);
+    });
+  }
+
+  makeSection('Weapons', ITEMS_DATA.weapons, canUseWeapon);
+  makeSection('Armor & Shields', ITEMS_DATA.armor, canUseArmor);
+  makeSection('Trinkets', ITEMS_DATA.trinkets, null);
+
+  // Inventory summary
+  const summ = document.createElement('div');
+  summ.className = 'inv-summary';
+  summ.id = 'invSummary';
+  container.appendChild(summ);
+  updateInvSummary();
+}
+
+function toggleItem(name, btn) {
+  if (eqSet.has(name)) {
+    eqSet.delete(name); invSet.delete(name);
+    btn.classList.remove('equipped','in-inv');
+  } else if (invSet.has(name)) {
+    eqSet.add(name);
+    btn.classList.add('equipped'); btn.classList.remove('in-inv');
+  } else {
+    invSet.add(name);
+    btn.classList.add('in-inv');
+  }
+  updateInvSummary();
+}
+
+function updateInvSummary() {
+  const el = document.getElementById('invSummary');
+  if (!el) return;
+  const inv = [...invSet].join(', ') || 'None';
+  const eq  = [...eqSet].join(', ') || 'None';
+  el.innerHTML = `Pack: <em>${inv}</em> &nbsp;|&nbsp; Equipped: <em>${eq}</em>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STEP 5 — Encounter
+// ═══════════════════════════════════════════════════════════════
+
+function addMonsterRow(type, count, role) {
+  monId++;
+  const id  = monId;
+  const row = document.createElement('div');
+  row.className = 'monster-row';
+  row.id = `mon-${id}`;
+  row.innerHTML = `
+    <div class="form-group" style="margin:0">
+      <label>Type</label>
+      <select id="mtype-${id}">${MONSTERS.map(m=>`<option value="${m}"${m===(type||'GOBLIN')?' selected':''}>${m}</option>`).join('')}</select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>Count</label>
+      <input type="number" id="mcount-${id}" value="${count||3}" min="1" max="20" />
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>Role</label>
+      <select id="mrole-${id}">${WEAPON_ROLES.map(r=>`<option value="${r}"${r===(role||'melee')?' selected':''}>${r}</option>`).join('')}</select>
+    </div>
+    <div style="padding-top:1.4rem">
+      <button class="btn btn-sm btn-danger" onclick="document.getElementById('mon-${id}').remove()">✕</button>
+    </div>`;
+  document.getElementById('monsterRows').appendChild(row);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STEP 6 — Export
+// ═══════════════════════════════════════════════════════════════
+
+function buildPlayer() {
+  const cls = document.getElementById('classSelect').value || 'Fighter';
+  const lv  = +document.getElementById('levelSlider').value || 1;
+  const name = document.getElementById('charName').value || 'Hero';
+  const rn   = getSelectedRace();
+
+  // Subclass
+  let subclass = null;
+  for (const [key, val] of Object.entries(featureChoices)) {
+    if (isSubclassFeature(key)) { subclass = val; break; }
+  }
+
+  // Choices array
+  const choices = [];
+  for (const [key, val] of Object.entries(featureChoices)) {
+    const [c, l, ...rest] = key.split('__');
+    choices.push([c, +l, rest.join('__'), val]);
+  }
+
+  // Speed from race
+  const speed = rn ? RACES_DATA[rn].speed : 30;
+
+  // Export stats WITHOUT feat stat bonuses — the Python feature attach()
+  // applies those, so including them here would double-count them.
+  const base   = getBaseStats();
+  const race   = getRaceBonuses();
+  const asiOnly = {}; STATS.forEach(s => asiOnly[s] = 0);
+  Object.values(asiChoices).forEach(ac => {
+    if (ac.type !== 'feat') {
+      if (ac.s1) asiOnly[ac.s1] = (asiOnly[ac.s1]||0) + (ac.type === '2+0' ? 2 : 1);
+      if (ac.type === '1+1' && ac.s2) asiOnly[ac.s2] = (asiOnly[ac.s2]||0) + 1;
+    }
+  });
+  const exportStats = {};
+  STATS.forEach(s => exportStats[s] = (base[s]||10) + (race[s]||0) + (asiOnly[s]||0));
+
+  const player = {
+    name,
+    classes: [[cls, lv]],
+    stats: exportStats,
+    speed,
+    items: [...invSet],
+    equipped: [...eqSet],
+    choices,
+    features: []
+  };
+  if (subclass) {
+    player.subclasses = { [cls]: subclass.toLowerCase().replace(/ /g,'_') };
+  }
+  if (rn) player.race = rn;
+
+  // Collect feat selections
+  const feats = [];
+  Object.values(asiChoices).forEach(ac => {
+    if (ac.type === 'feat' && ac.feat) feats.push(ac.feat);
+  });
+  if (feats.length) player.feats = feats;
+
+  return player;
+}
+
+function buildScenario() {
+  const name      = document.getElementById('scenName').value   || 'My Scenario';
+  const mapW      = +document.getElementById('mapW').value      || 60;
+  const mapH      = +document.getElementById('mapH').value      || 60;
+  const numRounds = +document.getElementById('numRounds').value || 20;
+  const player    = buildPlayer();
+
+  const monsters = [];
+  document.querySelectorAll('[id^="mon-"]').forEach(row => {
+    const id = row.id.replace('mon-','');
+    const t  = document.getElementById(`mtype-${id}`);
+    const c  = document.getElementById(`mcount-${id}`);
+    const r  = document.getElementById(`mrole-${id}`);
+    if (t && c && r) monsters.push({type: t.value, count: +c.value, weapon_role: r.value});
+  });
+
+  return {
+    name,
+    map: { width: mapW, height: mapH },
+    max_rounds: numRounds,
+    players: [player],
+    monsters,
+    positions: {}
+  };
+}
+
+function refreshPreview() {
+  const scen = buildScenario();
+  document.getElementById('jsonPreview').textContent = JSON.stringify(scen, null, 2);
+}
+
+function downloadScenario() {
+  const scen = buildScenario();
+  const json = JSON.stringify(scen, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const fname = (document.getElementById('saveFile').value || 'my_scenario').replace(/\.json$/, '') + '.json';
+  a.download = fname;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(a.href);
+  try { localStorage.setItem('dndbuilder_last', json); } catch(e) {}
+}
+
+async function validateChar() {
+  const base = document.getElementById('apiUrl').value.replace(/\/$/, '');
+  const el   = document.getElementById('apiStatus');
+  el.textContent = 'Validating...'; el.className = '';
+  try {
+    const r = await fetch(`${base}/validate-character`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({player: buildPlayer()})
+    });
+    const data = await r.json();
+    if (r.ok) { el.textContent = 'Valid! ' + (data.message||''); el.className='ok'; }
+    else       { el.textContent = 'Error: ' + (data.detail||JSON.stringify(data)); el.className='err'; }
+  } catch(e) { el.textContent = 'Could not reach API. Is the server running?'; el.className='err'; }
+}
+
+async function runSim() {
+  const base = document.getElementById('apiUrl').value.replace(/\/$/, '');
+  const el   = document.getElementById('apiStatus');
+  el.textContent = 'Running simulation...'; el.className = '';
+  try {
+    const r = await fetch(`${base}/simulate`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({scenario: buildScenario(), episodes: 1, silent: true})
+    });
+    const data = await r.json();
+    if (r.ok) {
+      el.textContent = `Done — ${data.sample_outcome || JSON.stringify(data).slice(0,200)}`; el.className='ok';
+    } else {
+      el.textContent = 'Error: ' + (data.detail||JSON.stringify(data)); el.className='err';
+    }
+  } catch(e) { el.textContent = 'Could not reach API. Is the server running?'; el.className='err'; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+
+initRaceGrid();
+addMonsterRow();
+renderStatTable();
+</script>
+</body>
+</html>

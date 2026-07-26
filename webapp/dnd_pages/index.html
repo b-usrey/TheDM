@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Combat Sim — DnDPython</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink:        #0d0b0e;
+    --parchment:  #f2e8d5;
+    --gold:       #c9a84c;
+    --gold-dim:   #7a5f28;
+    --steel-dark: #111820;
+    --glow-hot:   rgba(201,168,76,0.45);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--steel-dark);
+    color: var(--parchment);
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 18px;
+    line-height: 1.7;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+  .page {
+    max-width: 640px;
+    width: 100%;
+  }
+  h1 {
+    font-family: 'Cinzel Decorative', serif;
+    font-size: clamp(1.6rem, 5vw, 2.4rem);
+    color: var(--gold);
+    text-shadow: 0 0 30px var(--glow-hot);
+    margin-bottom: 0.5rem;
+  }
+  .subtitle {
+    font-family: 'Cinzel', serif;
+    font-size: 0.85rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--gold-dim);
+    margin-bottom: 2.5rem;
+  }
+  .links {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  .links a {
+    display: block;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 6px;
+    color: var(--parchment);
+    text-decoration: none;
+    transition: border-color .2s, background .2s;
+  }
+  .links a:hover {
+    border-color: var(--gold);
+    background: rgba(201,168,76,0.08);
+  }
+  .links a .name {
+    font-family: 'Cinzel', serif;
+    font-size: 0.95rem;
+    letter-spacing: 0.05em;
+    color: var(--gold);
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+  .links a .desc {
+    font-size: 0.85rem;
+    color: var(--parchment);
+    opacity: 0.75;
+  }
+  .back {
+    display: inline-block;
+    margin-top: 2.5rem;
+    font-family: 'Cinzel', serif;
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--gold-dim);
+    text-decoration: none;
+  }
+  .back:hover { color: var(--gold); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>⚔️ Combat Simulator</h1>
+  <p class="subtitle">D&D 5e encounter simulation, powered by DnDPython</p>
+
+  <div class="links">
+    <a href="/dnd/builder">
+      <span class="name">Builder</span>
+      <span class="desc">Create a character and assemble a scenario</span>
+    </a>
+    <a href="/dnd/simulator">
+      <span class="name">Simulator</span>
+      <span class="desc">Run a scenario and see the results</span>
+    </a>
+    <a href="/dnd/scenarios">
+      <span class="name">Scenarios</span>
+      <span class="desc">Browse saved and sample scenarios</span>
+    </a>
+    <a href="/dnd/monsters">
+      <span class="name">Monsters</span>
+      <span class="desc">Browse monster stat blocks</span>
+    </a>
+    <a href="/dnd/classes" style="grid-column: 1 / -1;">
+      <span class="name">Classes</span>
+      <span class="desc">Reference for classes, subclasses and features</span>
+    </a>
+  </div>
+
+  <a class="back" href="/">← Back to Map Generator</a>
+</div>
+</body>
+</html>

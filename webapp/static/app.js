@@ -1,0 +1,941 @@
+let world = null;
+let selection = null; // { type: "settlement" | "nation" | "poi", id }
+let currentStyle = "classic";
+let boundaryToggles = { duchy: false, county: false, barony: false };
+let gridSettings = { kind: "none", sizeMiles: 10 };
+let dragStart = null;          // {x, y} in map-wrap-relative pixels, while dragging
+let pendingRegion = null;      // {x0, y0, x1, y1} in world grid coords, once a selection is made
+let placingPOI = false;        // armed via the "Place on Map" toggle in the POI tab
+let placingSettlement = false; // armed via the "Place on Map" toggle in the Settlements tab
+
+const el = (id) => document.getElementById(id);
+
+// ---- Auth ----
+
+function showAuthError(formPrefix, msg) {
+  const e = el(`${formPrefix}-error`);
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+async function startApp(username) {
+  el("auth-overlay").hidden = true;
+  el("app").hidden = false;
+  el("account-username").textContent = username;
+  await fetchWorld();
+  refreshImage();
+}
+
+async function checkAuth() {
+  const res = await fetch("/api/auth/me");
+  if (res.ok) {
+    const data = await res.json();
+    await startApp(data.username);
+  }
+  // else: leave the login form showing (it's visible by default)
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  el("login-error").hidden = true;
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: el("login-username").value,
+      password: el("login-password").value,
+    }),
+  });
+  if (!res.ok) {
+    showAuthError("login", (await res.json()).error || "login failed");
+    return;
+  }
+  const data = await res.json();
+  await startApp(data.username);
+}
+
+async function handleSignup(e) {
+  e.preventDefault();
+  el("signup-error").hidden = true;
+  const res = await fetch("/api/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: el("signup-username").value,
+      password: el("signup-password").value,
+      invite_code: el("signup-invite").value,
+    }),
+  });
+  if (!res.ok) {
+    showAuthError("signup", (await res.json()).error || "signup failed");
+    return;
+  }
+  const data = await res.json();
+  await startApp(data.username);
+}
+
+async function handleLogout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.reload();
+}
+
+el("login-form").addEventListener("submit", handleLogin);
+el("signup-form").addEventListener("submit", handleSignup);
+el("btn-logout").addEventListener("click", handleLogout);
+el("show-signup").addEventListener("click", (e) => {
+  e.preventDefault();
+  el("login-form").hidden = true;
+  el("signup-form").hidden = false;
+});
+el("show-login").addEventListener("click", (e) => {
+  e.preventDefault();
+  el("signup-form").hidden = true;
+  el("login-form").hidden = false;
+});
+
+// ---- Tabs ----
+
+function showTab(tab) {
+  document.querySelectorAll(".tab-page").forEach((page) => {
+    page.hidden = page.dataset.tabPage !== tab;
+  });
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  });
+}
+
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => showTab(btn.dataset.tab));
+});
+
+// ---- World fetch / image refresh ----
+
+async function fetchWorld() {
+  const res = await fetch("/api/world");
+  world = await res.json();
+  renderAll();
+  refreshMyFiles();
+}
+
+async function refreshMyFiles() {
+  const res = await fetch("/api/worlds/list");
+  if (!res.ok) return;
+  const data = await res.json();
+  const select = el("my-files-select");
+  select.innerHTML = "";
+  for (const f of data.files) {
+    const option = document.createElement("option");
+    option.value = f.filename;
+    option.textContent = f.current ? `${f.filename} (current)` : f.filename;
+    if (f.current) option.selected = true;
+    select.appendChild(option);
+  }
+}
+
+async function handleSwitchWorld() {
+  const filename = el("my-files-select").value;
+  if (!filename) return;
+  showFilesStatus(`Switching to ${filename}...`);
+  const res = await fetch("/api/worlds/switch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename }),
+  });
+  if (!res.ok) {
+    showFilesError((await res.json()).error || "failed to switch world");
+    return;
+  }
+  clearSelection();
+  await fetchWorld();
+  refreshImage();
+  showFilesStatus(`Switched to ${filename}.`);
+}
+
+async function handleDeleteWorld() {
+  const filename = el("my-files-select").value;
+  if (!filename) return;
+  if (!confirm(`Delete ${filename}? This cannot be undone.`)) return;
+  showFilesStatus(`Deleting ${filename}...`);
+  const res = await fetch("/api/worlds/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename }),
+  });
+  if (!res.ok) {
+    showFilesError((await res.json()).error || "failed to delete world");
+    return;
+  }
+  await refreshMyFiles();
+  showFilesStatus(`Deleted ${filename}.`);
+}
+
+function refreshImage() {
+  const boundaryParams = Object.entries(boundaryToggles)
+    .map(([level, on]) => `${level}=${on ? 1 : 0}`)
+    .join("&");
+  const gridParams = `grid=${gridSettings.kind}&grid_size=${gridSettings.sizeMiles}`;
+  el("map-img").src = `/api/render.png?style=${currentStyle}&${boundaryParams}&${gridParams}&t=${Date.now()}`;
+  el("legend-img").src = `/api/legend.png?style=${currentStyle}&t=${Date.now()}`;
+}
+
+// ---- Map drag: region-select or POI placement ----
+
+function clampToImage(px, py) {
+  const rect = el("map-img").getBoundingClientRect();
+  const wrapRect = el("map-wrap").getBoundingClientRect();
+  const imgX0 = rect.left - wrapRect.left;
+  const imgY0 = rect.top - wrapRect.top;
+  return {
+    x: Math.min(Math.max(px, imgX0), imgX0 + rect.width),
+    y: Math.min(Math.max(py, imgY0), imgY0 + rect.height),
+    imgX0, imgY0, imgW: rect.width, imgH: rect.height,
+  };
+}
+
+function handleMapMouseDown(e) {
+  if (e.target.id !== "map-img" || e.button !== 0) return;
+  const wrapRect = el("map-wrap").getBoundingClientRect();
+  dragStart = { x: e.clientX - wrapRect.left, y: e.clientY - wrapRect.top };
+  const box = el("selection-box");
+  box.style.left = `${dragStart.x}px`;
+  box.style.top = `${dragStart.y}px`;
+  box.style.width = "0px";
+  box.style.height = "0px";
+  box.style.display = "block";
+  e.preventDefault();
+}
+
+function handleMapMouseMove(e) {
+  if (!dragStart) return;
+  const wrapRect = el("map-wrap").getBoundingClientRect();
+  const curX = e.clientX - wrapRect.left;
+  const curY = e.clientY - wrapRect.top;
+  const box = el("selection-box");
+  box.style.left = `${Math.min(dragStart.x, curX)}px`;
+  box.style.top = `${Math.min(dragStart.y, curY)}px`;
+  box.style.width = `${Math.abs(curX - dragStart.x)}px`;
+  box.style.height = `${Math.abs(curY - dragStart.y)}px`;
+}
+
+function handleMapMouseUp(e) {
+  if (!dragStart) return;
+  const wrapRect = el("map-wrap").getBoundingClientRect();
+  const startPt = clampToImage(dragStart.x, dragStart.y);
+  const endPt = clampToImage(e.clientX - wrapRect.left, e.clientY - wrapRect.top);
+  dragStart = null;
+
+  const fx0 = (Math.min(startPt.x, endPt.x) - startPt.imgX0) / startPt.imgW;
+  const fy0 = (Math.min(startPt.y, endPt.y) - startPt.imgY0) / startPt.imgH;
+  const fx1 = (Math.max(startPt.x, endPt.x) - startPt.imgX0) / startPt.imgW;
+  const fy1 = (Math.max(startPt.y, endPt.y) - startPt.imgY0) / startPt.imgH;
+  const isClick = fx1 - fx0 < 0.01 || fy1 - fy0 < 0.01;
+
+  if (isClick && (placingPOI || placingSettlement)) {
+    const gx = Math.round(((startPt.x - startPt.imgX0) / startPt.imgW) * world.width);
+    const gy = Math.round(((startPt.y - startPt.imgY0) / startPt.imgH) * world.height);
+    el("selection-box").style.display = "none";
+    if (placingPOI) {
+      handleCreatePOI(gx, gy);
+    } else {
+      handleCreateSettlement(gx, gy);
+    }
+    return;
+  }
+
+  if (isClick) {
+    handleZoomClear();
+    return;
+  }
+
+  const gx0 = Math.max(0, Math.round(fx0 * world.width));
+  const gy0 = Math.max(0, Math.round(fy0 * world.height));
+  const gx1 = Math.min(world.width, Math.round(fx1 * world.width));
+  const gy1 = Math.min(world.height, Math.round(fy1 * world.height));
+  pendingRegion = { x0: gx0, y0: gy0, x1: gx1, y1: gy1 };
+
+  el("zoom-hint").hidden = true;
+  el("zoom-body").hidden = false;
+  el("zoom-bounds").textContent =
+    `Selected (${gx0}, ${gy0}) to (${gx1}, ${gy1}) — ${gx1 - gx0} x ${gy1 - gy0} cells ` +
+    `of ${world.width} x ${world.height}.`;
+}
+
+function handleZoomClear() {
+  pendingRegion = null;
+  el("selection-box").style.display = "none";
+  el("zoom-hint").hidden = false;
+  el("zoom-body").hidden = true;
+}
+
+function showZoomStatus(msg) {
+  el("zoom-error").hidden = true;
+  el("zoom-status").textContent = msg;
+}
+
+function showZoomError(msg) {
+  const e = el("zoom-error");
+  e.textContent = msg;
+  e.hidden = false;
+  el("zoom-status").textContent = "";
+}
+
+async function handleZoomIn() {
+  if (!pendingRegion) return;
+  const resolution = el("zoom-resolution").value;
+  const filename = el("zoom-filename").value || "region.npz";
+  const btn = el("btn-zoom-in");
+  btn.disabled = true;
+  showZoomStatus("Generating region... this can take a minute or more.");
+  try {
+    const res = await fetch("/api/region", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...pendingRegion, resolution, filename }),
+    });
+    if (!res.ok) {
+      showZoomError((await res.json()).error || "failed to generate region");
+      return;
+    }
+    clearSelection();
+    handleZoomClear();
+    await fetchWorld();
+    refreshImage();
+    showZoomStatus(`Zoomed in, saved as ${filename}.`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---- Export ----
+
+function handleDownloadMap() {
+  const legend = el("export-legend").checked ? 1 : 0;
+  const boundaryParams = Object.entries(boundaryToggles)
+    .map(([level, on]) => `${level}=${on ? 1 : 0}`)
+    .join("&");
+  const gridParams = `grid=${gridSettings.kind}&grid_size=${gridSettings.sizeMiles}`;
+  const url = `/api/export.png?style=${currentStyle}&legend=${legend}&${boundaryParams}&${gridParams}`;
+
+  el("export-status").textContent = "Preparing download...";
+  const a = document.createElement("a");
+  a.href = url;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  el("export-status").textContent = "Download started.";
+}
+
+// ---- Rendering lists / markers ----
+
+function renderAll() {
+  el("world-info").textContent =
+    `${world.path} — seed ${world.seed} — ${world.width}x${world.height}`;
+  el("nation-count").textContent = world.nations.length;
+  el("settlement-count").textContent = world.settlements.length;
+  el("poi-count").textContent = world.points_of_interest.length;
+  el("map-title").value = world.title || "";
+  el("current-filename").textContent = (world.path || "").split(/[\\/]/).pop();
+  el("btn-undo").disabled = !world.can_undo;
+
+  populateSelectOnce("poi-kind-select", world.poi_kinds);
+  populateSelectOnce("edit-poi-kind", world.poi_kinds);
+
+  renderMarkers();
+  renderNationList();
+  renderSettlementTable(el("settlement-search").value);
+  renderPOIList();
+  renderNationsInView();
+}
+
+function renderNationsInView() {
+  // n.x_pct is null when a nation has no presence at all in the currently
+  // loaded world (see server.py's _nation_centroid_pct) -- for a zoomed
+  // region that's most nations, since only whichever one(s) actually
+  // overlap the cropped area will have a non-null centroid.
+  const present = world.nations.filter((n) => n.x_pct !== null).map((n) => n.name);
+  const el_ = el("nations-in-view");
+  if (present.length === 0) {
+    el_.textContent = "No nation controls this area.";
+  } else if (present.length === 1) {
+    el_.textContent = `This area belongs to: ${present[0]}`;
+  } else {
+    el_.textContent = `Nations visible here: ${present.join(", ")}`;
+  }
+}
+
+function populateSelectOnce(id, options) {
+  const select = el(id);
+  if (select.dataset.populated) return;
+  select.innerHTML = "";
+  for (const opt of options) {
+    const option = document.createElement("option");
+    option.value = opt;
+    option.textContent = opt[0].toUpperCase() + opt.slice(1);
+    select.appendChild(option);
+  }
+  select.dataset.populated = "1";
+}
+
+function renderMarkers() {
+  const layer = el("marker-layer");
+  layer.innerHTML = "";
+
+  for (const n of world.nations) {
+    if (n.x_pct === null) continue;
+    const div = document.createElement("div");
+    div.className = "marker marker-nation";
+    div.style.left = `${n.x_pct}%`;
+    div.style.top = `${n.y_pct}%`;
+    div.textContent = n.name.toUpperCase();
+    div.title = `${n.name} (nation)`;
+    div.addEventListener("click", () => selectNation(n.id));
+    layer.appendChild(div);
+  }
+
+  for (const s of world.settlements) {
+    const div = document.createElement("div");
+    div.className = `marker marker-settlement tier-${s.tier}`;
+    div.style.left = `${s.x_pct}%`;
+    div.style.top = `${s.y_pct}%`;
+    div.title = `${s.name} (${s.tier})`;
+    div.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectSettlement(s.id);
+    });
+    layer.appendChild(div);
+  }
+
+  for (const p of world.points_of_interest) {
+    const div = document.createElement("div");
+    div.className = "marker marker-poi";
+    div.style.left = `${p.x_pct}%`;
+    div.style.top = `${p.y_pct}%`;
+    div.title = `${p.name} (${p.kind})`;
+    div.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectPOI(p.id);
+    });
+    layer.appendChild(div);
+  }
+}
+
+function renderNationList() {
+  const list = el("nation-list");
+  list.innerHTML = "";
+  for (const n of world.nations) {
+    const li = document.createElement("li");
+    li.textContent = `${n.name} — capital: ${n.capital_name ?? "none"} — ` +
+      `${n.settlement_count} settlements, pop. ${n.total_population.toLocaleString()}, ` +
+      `${Math.round(n.total_gold).toLocaleString()} gold/yr`;
+    li.addEventListener("click", () => selectNation(n.id));
+    list.appendChild(li);
+  }
+}
+
+function renderSettlementTable(filter) {
+  const q = (filter || "").trim().toLowerCase();
+  const tbody = el("settlement-rows");
+  tbody.innerHTML = "";
+  const nationName = (nid) => {
+    const n = world.nations.find((n) => n.id === nid);
+    return n ? n.name : "—";
+  };
+  for (const s of world.settlements) {
+    if (q && !s.name.toLowerCase().includes(q)) continue;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${s.name}</td><td>${s.tier}</td><td>${nationName(s.nation_id)}</td>` +
+      `<td>${s.population.toLocaleString()}</td><td>${s.resource || "—"}</td>`;
+    tr.addEventListener("click", () => selectSettlement(s.id));
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPOIList() {
+  const list = el("poi-list");
+  list.innerHTML = "";
+  for (const p of world.points_of_interest) {
+    const li = document.createElement("li");
+    li.textContent = `${p.name} (${p.kind})`;
+    li.addEventListener("click", () => selectPOI(p.id));
+    list.appendChild(li);
+  }
+}
+
+// ---- Selection / inspector ----
+
+function selectSettlement(id) {
+  const s = world.settlements.find((s) => s.id === id);
+  if (!s) return;
+  selection = { type: "settlement", id };
+  showTab("selection");
+  el("inspector-empty").hidden = true;
+  el("inspector-body").hidden = false;
+  el("inspector-error").hidden = true;
+  el("edit-name").value = s.name;
+  el("edit-notes").value = s.notes || "";
+  el("edit-tier-field").hidden = false;
+  el("edit-tier").value = s.tier;
+  el("edit-settlement-stats-field").hidden = false;
+  el("edit-population").value = s.population;
+  el("edit-area-km2").value = s.area_km2;
+  el("edit-economic-output").value = s.economic_output;
+  el("edit-titles-field").hidden = true;
+  el("edit-poi-kind-field").hidden = true;
+  el("btn-delete").hidden = false;
+
+  const fiefGold = (g) => Math.round(g).toLocaleString();
+  const nation = world.nations.find((n) => n.id === s.nation_id);
+  const fiefBits = [`Nation: ${nation ? nation.name : "unclaimed"}`];
+  if (s.fief_rank) fiefBits.push(`Rank: ${s.fief_rank[0].toUpperCase()}${s.fief_rank.slice(1)}`);
+  if (s.duchy_name) fiefBits.push(`Duchy: ${s.duchy_name} (${fiefGold(s.duchy_gold)} gold/yr)`);
+  if (s.county_name) fiefBits.push(`County: ${s.county_name} (${fiefGold(s.county_gold)} gold/yr)`);
+  if (s.barony_name) fiefBits.push(`Barony: ${s.barony_name} (${fiefGold(s.barony_gold)} gold/yr)`);
+
+  el("inspector-stats").textContent =
+    (s.resource ? `Resource: ${s.resource} — ` : "") +
+    `Farmland ceiling: ${s.farmland_ceiling.toLocaleString()}` +
+    (fiefBits.length ? ` — ${fiefBits.join(" — ")}` : "");
+}
+
+function selectNation(id) {
+  const n = world.nations.find((n) => n.id === id);
+  if (!n) return;
+  selection = { type: "nation", id };
+  showTab("selection");
+  el("inspector-empty").hidden = true;
+  el("inspector-body").hidden = false;
+  el("inspector-error").hidden = true;
+  el("edit-name").value = n.name;
+  el("edit-notes").value = n.notes || "";
+  el("edit-tier-field").hidden = true;
+  el("edit-settlement-stats-field").hidden = true;
+  el("edit-titles-field").hidden = false;
+  el("edit-poi-kind-field").hidden = true;
+  el("edit-title-duke").value = n.duke_title;
+  el("edit-title-count").value = n.count_title;
+  el("edit-title-baron").value = n.baron_title;
+  el("btn-delete").hidden = true;
+  el("inspector-stats").textContent =
+    `Capital: ${n.capital_name ?? "none"} — Settlements: ${n.settlement_count} — ` +
+    `Population: ${n.total_population.toLocaleString()} — ` +
+    `Gold: ${Math.round(n.total_gold).toLocaleString()}/yr`;
+}
+
+function selectPOI(id) {
+  const p = world.points_of_interest.find((p) => p.id === id);
+  if (!p) return;
+  selection = { type: "poi", id };
+  showTab("selection");
+  el("inspector-empty").hidden = true;
+  el("inspector-body").hidden = false;
+  el("inspector-error").hidden = true;
+  el("edit-name").value = p.name;
+  el("edit-notes").value = p.notes || "";
+  el("edit-tier-field").hidden = true;
+  el("edit-settlement-stats-field").hidden = true;
+  el("edit-titles-field").hidden = true;
+  el("edit-poi-kind-field").hidden = false;
+  el("edit-poi-kind").value = p.kind;
+  el("btn-delete").hidden = false;
+  el("inspector-stats").textContent = `Location: (${Math.round(p.x)}, ${Math.round(p.y)})`;
+}
+
+function clearSelection() {
+  selection = null;
+  el("inspector-empty").hidden = false;
+  el("inspector-body").hidden = true;
+}
+
+function showError(msg) {
+  const e = el("inspector-error");
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+async function handleSave() {
+  if (!selection) return;
+
+  if (selection.type === "poi") {
+    const res = await fetch(`/api/pois/${selection.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: el("edit-name").value,
+        kind: el("edit-poi-kind").value,
+        notes: el("edit-notes").value,
+      }),
+    });
+    if (!res.ok) {
+      showError((await res.json()).error || "failed to save point of interest");
+      return;
+    }
+    clearSelection();
+    await fetchWorld();
+    refreshImage();
+    return;
+  }
+
+  const name = el("edit-name").value;
+  const base = selection.type === "settlement"
+    ? `/api/settlements/${selection.id}`
+    : `/api/nations/${selection.id}`;
+
+  const nameRes = await fetch(`${base}/name`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!nameRes.ok) {
+    showError((await nameRes.json()).error || "failed to rename");
+    return;
+  }
+
+  const notesRes = await fetch(`${base}/notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes: el("edit-notes").value }),
+  });
+  if (!notesRes.ok) {
+    showError((await notesRes.json()).error || "failed to save notes");
+    return;
+  }
+
+  if (selection.type === "settlement") {
+    const tier = el("edit-tier").value;
+    const tierRes = await fetch(`${base}/tier`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier }),
+    });
+    if (!tierRes.ok) {
+      showError((await tierRes.json()).error || "failed to change tier");
+      return;
+    }
+
+    const statsRes = await fetch(`${base}/stats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        population: el("edit-population").value,
+        area_km2: el("edit-area-km2").value,
+        economic_output: el("edit-economic-output").value,
+      }),
+    });
+    if (!statsRes.ok) {
+      showError((await statsRes.json()).error || "failed to save population/area/economic output");
+      return;
+    }
+  } else {
+    const titlesRes = await fetch(`${base}/titles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        duke: el("edit-title-duke").value,
+        count: el("edit-title-count").value,
+        baron: el("edit-title-baron").value,
+      }),
+    });
+    if (!titlesRes.ok) {
+      showError((await titlesRes.json()).error || "failed to save titles");
+      return;
+    }
+  }
+
+  clearSelection();
+  await fetchWorld();
+  refreshImage();
+}
+
+async function handleDelete() {
+  if (!selection) return;
+
+  if (selection.type === "poi") {
+    if (!confirm("Delete this point of interest? This cannot be undone.")) return;
+    const res = await fetch(`/api/pois/${selection.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      showError((await res.json()).error || "failed to delete");
+      return;
+    }
+    clearSelection();
+    await fetchWorld();
+    refreshImage();
+    return;
+  }
+
+  if (selection.type !== "settlement") return;
+  if (!confirm("Delete this settlement? This cannot be undone.")) return;
+  const res = await fetch(`/api/settlements/${selection.id}`, { method: "DELETE" });
+  if (!res.ok) {
+    showError((await res.json()).error || "failed to delete");
+    return;
+  }
+  clearSelection();
+  await fetchWorld();
+  refreshImage();
+}
+
+// ---- Points of interest: placement ----
+
+async function handleCreatePOI(x, y) {
+  const kind = el("poi-kind-select").value;
+  placingPOI = false;
+  el("btn-place-poi").classList.remove("armed");
+  el("btn-place-poi").textContent = "Place on Map";
+
+  const res = await fetch("/api/pois", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ x, y, kind, name: `New ${kind}` }),
+  });
+  if (!res.ok) {
+    const e = el("poi-error");
+    e.textContent = (await res.json()).error || "failed to create point of interest";
+    e.hidden = false;
+    return;
+  }
+  el("poi-error").hidden = true;
+  const poi = await res.json();
+  await fetchWorld();
+  refreshImage();
+  selectPOI(poi.id);
+}
+
+function handleTogglePlacePOI() {
+  placingPOI = !placingPOI;
+  if (placingPOI) disarmPlaceSettlement();
+  const btn = el("btn-place-poi");
+  btn.classList.toggle("armed", placingPOI);
+  btn.textContent = placingPOI ? "Click the map to place... (click here to cancel)" : "Place on Map";
+}
+
+// ---- Settlements: manual placement ----
+
+async function handleCreateSettlement(x, y) {
+  const tier = el("new-settlement-tier").value;
+  disarmPlaceSettlement();
+
+  const res = await fetch("/api/settlements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ x, y, tier, name: `New ${tier}` }),
+  });
+  if (!res.ok) {
+    const e = el("settlement-error");
+    e.textContent = (await res.json()).error || "failed to create settlement";
+    e.hidden = false;
+    return;
+  }
+  el("settlement-error").hidden = true;
+  const settlement = await res.json();
+  await fetchWorld();
+  refreshImage();
+  selectSettlement(settlement.id);
+}
+
+function disarmPlaceSettlement() {
+  placingSettlement = false;
+  el("btn-place-settlement").classList.remove("armed");
+  el("btn-place-settlement").textContent = "Place on Map";
+}
+
+function handleTogglePlaceSettlement() {
+  placingSettlement = !placingSettlement;
+  if (placingSettlement) {
+    placingPOI = false;
+    el("btn-place-poi").classList.remove("armed");
+    el("btn-place-poi").textContent = "Place on Map";
+  }
+  const btn = el("btn-place-settlement");
+  btn.classList.toggle("armed", placingSettlement);
+  btn.textContent = placingSettlement ? "Click the map to place... (click here to cancel)" : "Place on Map";
+}
+
+// ---- Title ----
+
+async function handleTitleSave() {
+  const title = el("map-title").value;
+  const res = await fetch("/api/title", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    showError((await res.json()).error || "failed to save title");
+    return;
+  }
+  const data = await res.json();
+  el("map-title").value = data.title;
+  refreshImage();
+}
+
+// ---- World file management (upload/download/save-as/generate/undo/restore) ----
+
+function showFilesError(msg) {
+  const e = el("files-error");
+  e.textContent = msg;
+  e.hidden = false;
+  el("files-status").textContent = "";
+}
+
+function showFilesStatus(msg) {
+  el("files-error").hidden = true;
+  el("files-status").textContent = msg;
+}
+
+async function handleUpload() {
+  const input = el("upload-file-input");
+  const file = input.files[0];
+  if (!file) {
+    showFilesError("choose a .npz file first");
+    return;
+  }
+  showFilesStatus(`Uploading ${file.name}...`);
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch("/api/worlds/upload", { method: "POST", body: formData });
+  if (!res.ok) {
+    showFilesError((await res.json()).error || "failed to upload world");
+    return;
+  }
+  clearSelection();
+  await fetchWorld();
+  refreshImage();
+  input.value = "";
+  showFilesStatus(`Uploaded and loaded ${file.name}.`);
+}
+
+function handleDownloadWorld() {
+  showFilesStatus("Preparing download...");
+  const a = document.createElement("a");
+  a.href = "/api/worlds/download";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showFilesStatus("Download started.");
+}
+
+async function handleSaveAs() {
+  const filename = el("save-as-filename").value;
+  if (!filename.trim()) {
+    showFilesError("enter a filename first");
+    return;
+  }
+  showFilesStatus("Saving...");
+  const res = await fetch("/api/worlds/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename }),
+  });
+  if (!res.ok) {
+    showFilesError((await res.json()).error || "failed to save");
+    return;
+  }
+  const data = await res.json();
+  await fetchWorld();
+  showFilesStatus(`Saved as ${data.filename}.`);
+}
+
+async function handleGenerate() {
+  const seed = el("gen-seed").value;
+  const size = el("gen-size").value;
+  const continentBias = el("gen-continent-bias").value;
+  const filename = el("gen-filename").value || "world.npz";
+
+  const btn = el("btn-generate");
+  btn.disabled = true;
+  showFilesStatus("Generating new world... this can take up to 20-30 seconds.");
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        seed, size,
+        continent_bias: continentBias === "" ? null : continentBias,
+        filename,
+      }),
+    });
+    if (!res.ok) {
+      showFilesError((await res.json()).error || "failed to generate world");
+      return;
+    }
+    clearSelection();
+    await fetchWorld();
+    refreshImage();
+    showFilesStatus(`Generated and loaded ${filename}.`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function handleUndo() {
+  showFilesStatus("Undoing...");
+  const res = await fetch("/api/undo", { method: "POST" });
+  if (!res.ok) {
+    showFilesError((await res.json()).error || "nothing to undo");
+    return;
+  }
+  clearSelection();
+  await fetchWorld();
+  refreshImage();
+  showFilesStatus("Last edit undone.");
+}
+
+async function handleRestoreBackup() {
+  if (!confirm("Restore the world to its state before the last save? This reverts the whole file.")) return;
+  showFilesStatus("Restoring backup...");
+  const res = await fetch("/api/restore-backup", { method: "POST" });
+  if (!res.ok) {
+    showFilesError((await res.json()).error || "no backup available");
+    return;
+  }
+  clearSelection();
+  await fetchWorld();
+  refreshImage();
+  showFilesStatus("Restored from backup.");
+}
+
+// ---- Wiring ----
+
+el("btn-save").addEventListener("click", handleSave);
+el("btn-delete").addEventListener("click", handleDelete);
+el("btn-cancel").addEventListener("click", clearSelection);
+el("settlement-search").addEventListener("input", (e) => renderSettlementTable(e.target.value));
+el("btn-title-save").addEventListener("click", handleTitleSave);
+el("style-select").addEventListener("change", (e) => {
+  currentStyle = e.target.value;
+  refreshImage();
+});
+el("btn-upload").addEventListener("click", handleUpload);
+el("btn-switch-world").addEventListener("click", handleSwitchWorld);
+el("btn-delete-world").addEventListener("click", handleDeleteWorld);
+el("btn-download-world").addEventListener("click", handleDownloadWorld);
+el("btn-save-as").addEventListener("click", handleSaveAs);
+el("btn-generate").addEventListener("click", handleGenerate);
+el("btn-undo").addEventListener("click", handleUndo);
+el("btn-restore-backup").addEventListener("click", handleRestoreBackup);
+for (const level of Object.keys(boundaryToggles)) {
+  el(`toggle-${level}`).addEventListener("change", (e) => {
+    boundaryToggles[level] = e.target.checked;
+    refreshImage();
+  });
+}
+el("grid-kind-select").addEventListener("change", (e) => {
+  gridSettings.kind = e.target.value;
+  refreshImage();
+});
+el("grid-size-miles").addEventListener("change", (e) => {
+  gridSettings.sizeMiles = parseFloat(e.target.value) || 0;
+  refreshImage();
+});
+el("map-wrap").addEventListener("mousedown", handleMapMouseDown);
+window.addEventListener("mousemove", handleMapMouseMove);
+window.addEventListener("mouseup", handleMapMouseUp);
+el("btn-zoom-in").addEventListener("click", handleZoomIn);
+el("btn-zoom-clear").addEventListener("click", handleZoomClear);
+el("btn-download-map").addEventListener("click", handleDownloadMap);
+el("btn-place-poi").addEventListener("click", handleTogglePlacePOI);
+el("btn-place-settlement").addEventListener("click", handleTogglePlaceSettlement);
+
+checkAuth();

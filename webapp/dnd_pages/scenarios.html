@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scenarios — DnDPython</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet" />
+  <style>
+    :root { --ink: #0d0b0e; --parchment: #f2e8d5; --gold: #c9a84c; --gold-dim: #7a5f28; --steel-dark: #111820; --steel-mid: #1e2a38; --glow: rgba(201,168,76,0.18); --glow-hot: rgba(201,168,76,0.45); }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--steel-dark); color: var(--parchment); font-family: 'Crimson Pro', Georgia, serif; font-size: 18px; line-height: 1.7; min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"); background-size: 200px; pointer-events: none; z-index: 0; opacity: 0.5; }
+    .page { max-width: 860px; margin: 0 auto; padding: 2rem; position: relative; z-index: 1; }
+    .page-header { display: flex; align-items: center; gap: 2rem; padding: 2rem 0 1.5rem; border-bottom: 1px solid rgba(201,168,76,0.2); margin-bottom: 2.5rem; }
+    .back-link { font-family: 'Cinzel', serif; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--gold-dim); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+    .back-link:hover { color: var(--gold); }
+    .page-title { font-family: 'Cinzel Decorative', serif; font-size: clamp(1.4rem, 4vw, 2.2rem); color: var(--gold); text-shadow: 0 0 30px var(--glow-hot); }
+    .page-subtitle { font-family: 'Cinzel', serif; font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold-dim); margin-top: 0.3rem; }
+
+    .scenario-list { display: flex; flex-direction: column; gap: 1.5rem; }
+
+    .scenario-card { background: linear-gradient(160deg, rgba(30,42,56,0.6), rgba(17,24,32,0.8)); border: 1px solid rgba(201,168,76,0.2); border-left: 3px solid var(--gold-dim); padding: 1.5rem; }
+
+    .sc-title { font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--gold); margin-bottom: 0.75rem; }
+
+    .sc-meta { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .sc-tag { font-family: 'Cinzel', serif; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-dim); }
+    .sc-tag span { color: var(--parchment); font-family: 'Crimson Pro', serif; font-size: 0.9rem; letter-spacing: 0; text-transform: none; }
+
+    .sc-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+    .sc-party-label { font-family: 'Cinzel', serif; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.3rem; }
+    .blue { color: #6ab0e8; } .red { color: #e87070; }
+    .sc-party-entry { color: rgba(242,232,213,0.8); }
+
+    .sc-btn { display: inline-block; font-family: 'Cinzel', serif; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; padding: 0.6rem 1.5rem; border: 2px solid var(--gold); background: var(--gold); color: var(--ink); text-decoration: none; transition: all 0.2s; }
+    .sc-btn:hover { background: transparent; color: var(--gold); }
+
+    .loading { text-align: center; color: rgba(242,232,213,0.4); font-style: italic; padding: 4rem 0; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <nav style="display:flex;gap:1.1rem;flex-wrap:wrap;align-items:center;">
+        <a class="back-link" href="/dnd">← Home</a>
+        <a class="back-link" href="/dnd/builder">Builder</a>
+        <a class="back-link" href="/dnd/simulator">Simulator</a>
+        <a class="back-link" href="/dnd/scenarios">Scenarios</a>
+        <a class="back-link" href="/dnd/monsters">Monsters</a>
+        <a class="back-link" href="/dnd/classes">Classes</a>
+        <a class="back-link" href="/" style="margin-left:1.5rem;">Map Generator →</a>
+      </nav>
+      <div>
+        <h1 class="page-title">📜 Scenarios</h1>
+        <p class="page-subtitle">Available Encounters</p>
+      </div>
+    </header>
+
+    <div id="scenario-list" class="scenario-list">
+      <p class="loading">Loading scenarios…</p>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "/api/dnd";
+
+    function formatName(filename) {
+      return filename.replace(".json", "").replace(/_/g, " ")
+        .replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function renderScenario(filename, data) {
+      const players = (data.players || []).map(p => {
+        const cls = (p.classes || []).map(([c, l]) => `${c} ${l}`).join(", ");
+        return `<div class="sc-party-entry">${p.name} — ${cls}</div>`;
+      }).join("");
+
+      const monsters = (data.monsters || []).map(m =>
+        `<div class="sc-party-entry">${m.count}× ${m.type.charAt(0) + m.type.slice(1).toLowerCase()} (${m.weapon_role || "random"})</div>`
+      ).join("");
+
+      const mapW = data.map?.width ?? "?";
+      const mapH = data.map?.height ?? "?";
+      const maxRounds = data.max_rounds ?? 100;
+
+      return `
+        <div class="scenario-card">
+          <div class="sc-title">${formatName(filename)}</div>
+          <div class="sc-meta">
+            <div class="sc-tag">Map <span>${mapW} × ${mapH} tiles</span></div>
+            <div class="sc-tag">Max Rounds <span>${maxRounds}</span></div>
+          </div>
+          <div class="sc-parties">
+            <div>
+              <div class="sc-party-label blue">Blue Team</div>
+              ${players || '<div class="sc-party-entry">—</div>'}
+            </div>
+            <div>
+              <div class="sc-party-label red">Red Team</div>
+              ${monsters || '<div class="sc-party-entry">—</div>'}
+            </div>
+          </div>
+          <a class="sc-btn" href="simulator.html?scenario=${encodeURIComponent(filename)}">Run in Simulator →</a>
+        </div>
+      `;
+    }
+
+    async function loadScenarios() {
+      const list = document.getElementById("scenario-list");
+      try {
+        const listRes  = await fetch(`${API_URL}/scenarios`);
+        const listData = await listRes.json();
+        const scenarios = await Promise.all(
+          listData.scenarios.map(name =>
+            fetch(`${API_URL}/scenarios/${name}`).then(r => r.json()).then(d => [name, d])
+          )
+        );
+        list.innerHTML = scenarios.map(([name, data]) => renderScenario(name, data)).join("");
+      } catch (e) {
+        list.innerHTML = `<p class="loading">Could not reach API: ${e.message}</p>`;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", loadScenarios);
+  </script>
+</body>
+</html>
