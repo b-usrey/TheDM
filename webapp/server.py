@@ -1805,6 +1805,31 @@ def api_record_death():
         return jsonify(state.dynasty.to_dict())
 
 
+@app.route("/api/dynasty/events/note", methods=["POST"])
+def api_record_note():
+    """Free-form log entries for anything that isn't a birth/marriage/death --
+    treaties, wars, coronations -- so the event log can double as an actual
+    house history, not just a genealogy record."""
+    body = request.get_json(silent=True) or {}
+    year, err = _clean_year(body.get("year"))
+    if err:
+        return jsonify({"error": err}), 400
+    description, err = _clean_dynasty_text(body.get("description", ""), label="description")
+    if err:
+        return jsonify({"error": err}), 400
+    if not description:
+        return jsonify({"error": "description cannot be empty"}), 400
+
+    with state.lock:
+        house_id, err = _clean_optional_ref(state.dynasty.houses, body.get("house_id"), "house")
+        if err:
+            return jsonify({"error": err}), 400
+        state.push_undo()
+        state.dynasty.record_note(year, description, house_id=house_id)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
 @app.route("/api/dynasty/events/<eid>", methods=["DELETE"])
 def api_delete_event(eid):
     with state.lock:

@@ -63,9 +63,12 @@ class House:
 class Event:
     uid: str = field(default_factory=_uid)
     year: int = 0
-    kind: str = ""                       # "birth" | "marriage" | "death"
+    kind: str = ""                       # "birth" | "marriage" | "death" | "note"
     person_ids: list = field(default_factory=list)
     description: str = ""
+    house_id: Optional[str] = None       # set on "note" events so a note with no
+                                          # linked people (e.g. "sacked by raiders")
+                                          # still shows up in that house's log
 
 
 @dataclass
@@ -186,6 +189,15 @@ class Dynasty:
         person.death_year = year
         desc = description or f"{person.name} died"
         self.events.append(Event(year=year, kind="death", person_ids=[person.uid], description=desc))
+
+    def record_note(self, year, description, house_id=None, person_ids=None):
+        """A free-form log entry for anything that isn't a birth/marriage/
+        death -- a treaty, a war, a coronation -- tied to a year and, unlike
+        the other event kinds, not required to reference any Person at all.
+        house_id is what makes an event with no person_ids still show up in
+        that house's own log (see server.py's renderEventLog equivalent)."""
+        self.events.append(Event(year=year, kind="note", person_ids=list(person_ids or []),
+                                  description=description, house_id=house_id))
 
 
 def _random_names(rng):

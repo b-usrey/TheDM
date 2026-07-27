@@ -1307,7 +1307,7 @@ function renderEventLog(houseId) {
   const list = el("house-event-log");
   list.innerHTML = "";
   const relevant = dynasty.events
-    .filter((e) => e.person_ids.some((id) => memberIds.has(id)))
+    .filter((e) => e.house_id === houseId || e.person_ids.some((id) => memberIds.has(id)))
     .sort((a, b) => a.year - b.year);
   for (const e of relevant) {
     const li = document.createElement("li");
@@ -1604,6 +1604,27 @@ async function handleRecordDeath() {
   renderDynasty();
 }
 
+async function handleRecordNote() {
+  const description = el("note-description").value;
+  if (!description.trim()) {
+    showHouseDetailError("write down what happened first");
+    return;
+  }
+  const res = await fetch("/api/dynasty/events/note", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ description, year: el("note-year").value, house_id: selectedHouseId }),
+  });
+  if (!res.ok) {
+    showHouseDetailError((await res.json()).error || "failed to log event");
+    return;
+  }
+  el("note-description").value = "";
+  el("note-year").value = "";
+  dynasty = await res.json();
+  renderDynasty();
+}
+
 // ---- Wiring ----
 
 el("btn-save").addEventListener("click", handleSave);
@@ -1663,5 +1684,6 @@ el("btn-add-person").addEventListener("click", handleAddPerson);
 el("btn-record-marriage").addEventListener("click", handleRecordMarriage);
 el("btn-record-birth").addEventListener("click", handleRecordBirth);
 el("btn-record-death").addEventListener("click", handleRecordDeath);
+el("btn-log-note").addEventListener("click", handleRecordNote);
 
 startApp();
