@@ -375,3 +375,59 @@ main {
 }
 
 #detail-body h3 { margin: 0 0 0.3rem 0; }
+
+#house-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+#house-list li {
+  padding: 0.3rem 0.2rem;
+  border-bottom: 1px solid #33291f;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+#house-list li:hover { background: #2f2820; }
+#house-list li.active-row { background: #3a3228; color: #e8e0d0; }
+
+#dynasty-house-detail h3 {
+  font-size: 0.85rem;
+  color: #b0a48f;
+  margin: 0.9rem 0 0.4rem 0;
+}
+
+#family-tree ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 1rem;
+}
+#family-tree > ul { padding-left: 0; }
+#family-tree li { padding: 0.15rem 0; font-size: 0.85rem; }
+
+#house-event-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+#house-event-log li {
+  padding: 0.25rem 0.2rem;
+  border-bottom: 1px solid #33291f;
+  font-size: 0.8rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.event-delete-btn {
+  background: none;
+  border: none;
+  color: #a89b84;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0.3rem;
+}
+.event-delete-btn:hover { color: #ff8a80; }

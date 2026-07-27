@@ -38,6 +38,7 @@ from mapgen.settlements import Settlement, Tier
 from mapgen.worldmap import WorldMap, build_world
 from render.render_map import render_legend_to_png_bytes, render_to_png_bytes
 from webapp.dnd_api import register_dnd_routes
+from webapp.dynasty import Dynasty, generate_founder, generate_founding_house
 from webapp.gm_tools import generate_encounter, generate_npc, travel_estimate
 from webapp.invites import InviteStore
 from webapp.shares import ShareStore
@@ -114,10 +115,18 @@ class AppState:
     def __init__(self, path):
         self.path = path
         self.world = WorldMap.load(path)
+        self.dynasty = Dynasty.load(self._dynasty_path())
         self.lock = threading.Lock()
         self._png_cache = {}         # style -> PNG bytes
         self._legend_png_cache = {}  # style -> PNG bytes
         self._undo_stack = []        # lightweight snapshots, see push_undo()
+
+    def _dynasty_path(self):
+        # A JSON sidecar next to the world's own .npz -- world.npz ->
+        # world.dynasty.json -- rather than a field on WorldMap itself; see
+        # webapp/dynasty.py for why genealogy data is kept out of the
+        # generator's own numpy-array save format.
+        return os.path.splitext(self.path)[0] + ".dynasty.json"
 
     def mark_dirty(self):
         self._png_cache = {}
@@ -134,18 +143,22 @@ class AppState:
                 pass
         self.world.save(self.path)
 
+    def save_dynasty(self):
+        self.dynasty.save(self._dynasty_path())
+
     def use_world(self, world, path):
         """Swap in a freshly loaded or freshly generated world as the active one."""
         self.world = world
         self.path = path
         self._undo_stack = []
+        self.dynasty = Dynasty.load(self._dynasty_path())
         self.mark_dirty()
 
     def push_undo(self):
-        """Snapshot the parts of the world that edit endpoints can change --
-        terrain rasters, fief structure etc. are set once at generation time
-        and never touched by an edit, so there's no need to pay for copying
-        them on every single rename."""
+        """Snapshot the parts of the world (and its dynasty) that edit
+        endpoints can change -- terrain rasters, fief structure etc. are set
+        once at generation time and never touched by an edit, so there's no
+        need to pay for copying them on every single rename."""
         self._undo_stack.append({
             "settlements": copy.deepcopy(self.world.settlements),
             "nation_names": list(self.world.nation_names),
@@ -153,6 +166,7 @@ class AppState:
             "nation_notes": list(self.world.nation_notes),
             "title": self.world.title,
             "points_of_interest": copy.deepcopy(self.world.points_of_interest),
+            "dynasty": copy.deepcopy(self.dynasty),
         })
         if len(self._undo_stack) > MAX_UNDO_STEPS:
             self._undo_stack.pop(0)
@@ -167,8 +181,10 @@ class AppState:
         self.world.nation_notes = snap["nation_notes"]
         self.world.title = snap["title"]
         self.world.points_of_interest = snap["points_of_interest"]
+        self.dynasty = snap["dynasty"]
         self.mark_dirty()
         self.save()
+        self.save_dynasty()
         return True
 
     def restore_backup(self):
@@ -1418,6 +1434,387 @@ def api_public_legend_png(token):
         return jsonify({"error": "invalid or revoked link"}), 404
     png = render_legend_to_png_bytes(world, style=_resolve_style())
     return app.response_class(png, mimetype="image/png")
+
+
+# ---- Dynasty: persistent noble-house genealogies ---------------------------
+
+MAX_DYNASTY_NAME_LEN = 80
+MAX_DYNASTY_TEXT_LEN = 4000  # notes/titles/event descriptions -- generous free text, still bounded
+
+
+def _clean_dynasty_name(raw, label="name"):
+    if not isinstance(raw, str):
+        return None, f"{label} must be a string"
+    name = raw.strip()
+    if not name:
+        return None, f"{label} cannot be empty"
+    if len(name) > MAX_DYNASTY_NAME_LEN:
+        return None, f"{label} cannot be longer than {MAX_DYNASTY_NAME_LEN} characters"
+    return name, None
+
+
+def _clean_dynasty_text(raw, label="notes"):
+    # Empty is valid here (unlike a name) -- notes/titles/descriptions
+    # starting blank is the normal case, not an error.
+    if not isinstance(raw, str):
+        return None, f"{label} must be a string"
+    text = raw.strip()
+    if len(text) > MAX_DYNASTY_TEXT_LEN:
+        return None, f"{label} cannot be longer than {MAX_DYNASTY_TEXT_LEN} characters"
+    return text, None
+
+
+def _clean_year(raw):
+    try:
+        return int(raw), None
+    except (TypeError, ValueError):
+        return None, "year must be a whole number"
+
+
+def _clean_optional_ref(mapping, raw, label):
+    ref = raw or None
+    if ref is not None and ref not in mapping:
+        return None, f"no such {label}"
+    return ref, None
+
+
+@app.route("/api/dynasty")
+def api_dynasty():
+    with state.lock:
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/year", methods=["POST"])
+def api_set_dynasty_year():
+    body = request.get_json(silent=True) or {}
+    year, err = _clean_year(body.get("year"))
+    if err:
+        return jsonify({"error": err}), 400
+    with state.lock:
+        state.push_undo()
+        state.dynasty.current_year = year
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/houses", methods=["POST"])
+def api_create_house():
+    body = request.get_json(silent=True) or {}
+    name, err = _clean_dynasty_name(body.get("name") or "New House")
+    if err:
+        return jsonify({"error": err}), 400
+    notes, err = _clean_dynasty_text(body.get("notes", ""))
+    if err:
+        return jsonify({"error": err}), 400
+    nation_id = body.get("nation_id")
+    if nation_id not in (None, ""):
+        try:
+            nation_id = int(nation_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "nation_id must be an integer"}), 400
+    else:
+        nation_id = None
+    seat = body.get("seat_settlement_uid") or None
+
+    with state.lock:
+        if nation_id is not None and not (0 <= nation_id < len(state.world.nation_names)):
+            return jsonify({"error": "no such nation"}), 400
+        state.push_undo()
+        state.dynasty.create_house(name=name, nation_id=nation_id, seat_settlement_uid=seat, notes=notes)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/houses/generate", methods=["POST"])
+def api_generate_house():
+    """One-click "roll a ruling house for this nation" -- creates the House
+    and a founder Person together (see webapp/dynasty.generate_founding_house)
+    rather than requiring two separate forms just to get something to build on."""
+    body = request.get_json(silent=True) or {}
+    nation_id = body.get("nation_id")
+    with state.lock:
+        nation_name = None
+        if nation_id not in (None, ""):
+            try:
+                nation_id = int(nation_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "nation_id must be an integer"}), 400
+            if not (0 <= nation_id < len(state.world.nation_names)):
+                return jsonify({"error": "no such nation"}), 400
+            nation_name = state.world.nation_names[nation_id]
+        else:
+            nation_id = None
+        state.push_undo()
+        generate_founding_house(state.dynasty, nation_id, nation_name)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/houses/<hid>", methods=["POST"])
+def api_update_house(hid):
+    body = request.get_json(silent=True) or {}
+    with state.lock:
+        house = state.dynasty.houses.get(hid)
+        if not house:
+            return jsonify({"error": "no such house"}), 404
+
+        name = house.name
+        if "name" in body:
+            name, err = _clean_dynasty_name(body["name"])
+            if err:
+                return jsonify({"error": err}), 400
+
+        notes = house.notes
+        if "notes" in body:
+            notes, err = _clean_dynasty_text(body["notes"])
+            if err:
+                return jsonify({"error": err}), 400
+
+        nation_id = house.nation_id
+        if "nation_id" in body:
+            raw = body["nation_id"]
+            if raw in (None, ""):
+                nation_id = None
+            else:
+                try:
+                    nation_id = int(raw)
+                except (TypeError, ValueError):
+                    return jsonify({"error": "nation_id must be an integer"}), 400
+                if not (0 <= nation_id < len(state.world.nation_names)):
+                    return jsonify({"error": "no such nation"}), 400
+
+        seat = house.seat_settlement_uid
+        if "seat_settlement_uid" in body:
+            seat = body["seat_settlement_uid"] or None
+
+        state.push_undo()
+        house.name, house.notes, house.nation_id, house.seat_settlement_uid = name, notes, nation_id, seat
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/houses/<hid>", methods=["DELETE"])
+def api_delete_house(hid):
+    with state.lock:
+        state.push_undo()
+        if not state.dynasty.delete_house(hid):
+            return jsonify({"error": "no such house"}), 404
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/houses/<hid>/generate-founder", methods=["POST"])
+def api_generate_founder(hid):
+    with state.lock:
+        house = state.dynasty.houses.get(hid)
+        if not house:
+            return jsonify({"error": "no such house"}), 404
+        if house.founder_id:
+            return jsonify({"error": "this house already has a founder -- delete or reassign it first"}), 400
+        state.push_undo()
+        generate_founder(state.dynasty, house)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/people", methods=["POST"])
+def api_create_person():
+    body = request.get_json(silent=True) or {}
+    name, err = _clean_dynasty_name(body.get("name") or "New person")
+    if err:
+        return jsonify({"error": err}), 400
+    notes, err = _clean_dynasty_text(body.get("notes", ""))
+    if err:
+        return jsonify({"error": err}), 400
+    sex = str(body.get("sex") or "").strip()[:20]
+    birth_year = None
+    if body.get("birth_year") not in (None, ""):
+        birth_year, err = _clean_year(body.get("birth_year"))
+        if err:
+            return jsonify({"error": err}), 400
+
+    with state.lock:
+        house_id, err = _clean_optional_ref(state.dynasty.houses, body.get("house_id"), "house")
+        if err:
+            return jsonify({"error": err}), 400
+        father_id, err = _clean_optional_ref(state.dynasty.people, body.get("father_id"), "father")
+        if err:
+            return jsonify({"error": err}), 400
+        mother_id, err = _clean_optional_ref(state.dynasty.people, body.get("mother_id"), "mother")
+        if err:
+            return jsonify({"error": err}), 400
+
+        state.push_undo()
+        state.dynasty.add_person(name=name, sex=sex, birth_year=birth_year, house_id=house_id,
+                                  father_id=father_id, mother_id=mother_id, notes=notes)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/people/<pid>", methods=["POST"])
+def api_update_person(pid):
+    body = request.get_json(silent=True) or {}
+    with state.lock:
+        person = state.dynasty.people.get(pid)
+        if not person:
+            return jsonify({"error": "no such person"}), 404
+
+        name = person.name
+        if "name" in body:
+            name, err = _clean_dynasty_name(body["name"])
+            if err:
+                return jsonify({"error": err}), 400
+
+        notes = person.notes
+        if "notes" in body:
+            notes, err = _clean_dynasty_text(body["notes"])
+            if err:
+                return jsonify({"error": err}), 400
+
+        title = person.title
+        if "title" in body:
+            title, err = _clean_dynasty_text(body["title"], label="title")
+            if err:
+                return jsonify({"error": err}), 400
+
+        sex = person.sex
+        if "sex" in body:
+            sex = str(body["sex"] or "").strip()[:20]
+
+        birth_year = person.birth_year
+        if "birth_year" in body:
+            raw = body["birth_year"]
+            if raw in (None, ""):
+                birth_year = None
+            else:
+                birth_year, err = _clean_year(raw)
+                if err:
+                    return jsonify({"error": err}), 400
+
+        house_id = person.house_id
+        if "house_id" in body:
+            house_id, err = _clean_optional_ref(state.dynasty.houses, body["house_id"], "house")
+            if err:
+                return jsonify({"error": err}), 400
+
+        father_id = person.father_id
+        if "father_id" in body:
+            father_id, err = _clean_optional_ref(state.dynasty.people, body["father_id"], "father")
+            if err:
+                return jsonify({"error": err}), 400
+            if father_id == pid:
+                return jsonify({"error": "a person cannot be their own father"}), 400
+
+        mother_id = person.mother_id
+        if "mother_id" in body:
+            mother_id, err = _clean_optional_ref(state.dynasty.people, body["mother_id"], "mother")
+            if err:
+                return jsonify({"error": err}), 400
+            if mother_id == pid:
+                return jsonify({"error": "a person cannot be their own mother"}), 400
+
+        state.push_undo()
+        person.name, person.notes, person.title, person.sex = name, notes, title, sex
+        person.birth_year, person.house_id = birth_year, house_id
+        person.father_id, person.mother_id = father_id, mother_id
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/people/<pid>", methods=["DELETE"])
+def api_delete_person(pid):
+    with state.lock:
+        state.push_undo()
+        if not state.dynasty.delete_person(pid):
+            return jsonify({"error": "no such person"}), 404
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/events/birth", methods=["POST"])
+def api_record_birth():
+    body = request.get_json(silent=True) or {}
+    name, err = _clean_dynasty_name(body.get("name") or "New person")
+    if err:
+        return jsonify({"error": err}), 400
+    year, err = _clean_year(body.get("year"))
+    if err:
+        return jsonify({"error": err}), 400
+    description, err = _clean_dynasty_text(body.get("description", ""), label="description")
+    if err:
+        return jsonify({"error": err}), 400
+    sex = str(body.get("sex") or "").strip()[:20]
+
+    with state.lock:
+        father_id, err = _clean_optional_ref(state.dynasty.people, body.get("father_id"), "father")
+        if err:
+            return jsonify({"error": err}), 400
+        mother_id, err = _clean_optional_ref(state.dynasty.people, body.get("mother_id"), "mother")
+        if err:
+            return jsonify({"error": err}), 400
+        house_id, err = _clean_optional_ref(state.dynasty.houses, body.get("house_id"), "house")
+        if err:
+            return jsonify({"error": err}), 400
+
+        state.push_undo()
+        state.dynasty.record_birth(name=name, year=year, sex=sex, father_id=father_id,
+                                    mother_id=mother_id, house_id=house_id, description=description)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/events/marriage", methods=["POST"])
+def api_record_marriage():
+    body = request.get_json(silent=True) or {}
+    year, err = _clean_year(body.get("year"))
+    if err:
+        return jsonify({"error": err}), 400
+    description, err = _clean_dynasty_text(body.get("description", ""), label="description")
+    if err:
+        return jsonify({"error": err}), 400
+
+    with state.lock:
+        a_id, b_id = body.get("person_a_id"), body.get("person_b_id")
+        if a_id not in state.dynasty.people or b_id not in state.dynasty.people:
+            return jsonify({"error": "both people must already exist"}), 400
+        if a_id == b_id:
+            return jsonify({"error": "a person cannot marry themself"}), 400
+        state.push_undo()
+        state.dynasty.record_marriage(a_id, b_id, year, description=description)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/events/death", methods=["POST"])
+def api_record_death():
+    body = request.get_json(silent=True) or {}
+    year, err = _clean_year(body.get("year"))
+    if err:
+        return jsonify({"error": err}), 400
+    description, err = _clean_dynasty_text(body.get("description", ""), label="description")
+    if err:
+        return jsonify({"error": err}), 400
+
+    with state.lock:
+        person_id = body.get("person_id")
+        if person_id not in state.dynasty.people:
+            return jsonify({"error": "no such person"}), 404
+        state.push_undo()
+        state.dynasty.record_death(person_id, year, description=description)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/events/<eid>", methods=["DELETE"])
+def api_delete_event(eid):
+    with state.lock:
+        idx = next((i for i, e in enumerate(state.dynasty.events) if e.uid == eid), None)
+        if idx is None:
+            return jsonify({"error": "no such event"}), 404
+        state.push_undo()
+        del state.dynasty.events[idx]
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
 
 
 def _admin_user_stats(username):

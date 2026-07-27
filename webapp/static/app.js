@@ -10,6 +10,8 @@ let placingSettlement = false; // armed via the "Place on Map" toggle in the Set
 let measuringTravel = false;    // armed via "Pick Points on Map" in the GM Tools tab
 let travelPoints = [];          // up to 2 {x, y} world-grid points collected while measuring
 let pickingEncounter = false;   // armed via "Pick Spot on Map" in the GM Tools tab
+let dynasty = null;
+let selectedHouseId = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -117,6 +119,7 @@ async function fetchWorld() {
   renderAll();
   refreshMyFiles();
   refreshShareStatus();
+  fetchDynasty();
 }
 
 async function refreshMyFiles() {
@@ -1064,6 +1067,386 @@ async function handleRevokeShare() {
   el("share-status").textContent = "Link revoked.";
 }
 
+// ---- Dynasty: persistent noble-house genealogies ----
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str == null ? "" : String(str);
+  return div.innerHTML;
+}
+
+function personYearsLabel(person) {
+  const birth = person.birth_year != null ? person.birth_year : "?";
+  if (person.death_year != null) return `${birth}–${person.death_year}`;
+  return `b. ${birth}`;
+}
+
+function houseMembers(houseId) {
+  return Object.values(dynasty.people).filter((p) => p.house_id === houseId);
+}
+
+function buildFamilyTreeHTML(houseId) {
+  const members = houseMembers(houseId);
+  if (members.length === 0) {
+    return "<p>No people recorded in this house yet.</p>";
+  }
+  // Roots: members with no parent recorded in this dynasty at all -- either
+  // truly unknown ancestry, or a spouse who joined the house by marriage
+  // rather than birth.
+  const rootCandidates = members.filter((p) => {
+    const fatherKnown = p.father_id && dynasty.people[p.father_id];
+    const motherKnown = p.mother_id && dynasty.people[p.mother_id];
+    return !fatherKnown && !motherKnown;
+  });
+
+  // A married couple who are both otherwise-rootless members of this same
+  // house would each qualify as their own root, duplicating the pair --
+  // keep only one (the earlier-born, ties broken by uid) as the actual
+  // root; the other still appears, just as that root's inline spouse label.
+  const rootIds = new Set(rootCandidates.map((p) => p.uid));
+  const skipAsRoot = new Set();
+  for (const p of rootCandidates) {
+    if (skipAsRoot.has(p.uid) || !p.spouse_id || !rootIds.has(p.spouse_id) || skipAsRoot.has(p.spouse_id)) continue;
+    const spouse = dynasty.people[p.spouse_id];
+    const pBirth = p.birth_year ?? Infinity;
+    const spouseBirth = spouse.birth_year ?? Infinity;
+    const loser = pBirth !== spouseBirth ? (pBirth < spouseBirth ? spouse : p) : (p.uid < spouse.uid ? spouse : p);
+    skipAsRoot.add(loser.uid);
+  }
+  const roots = rootCandidates.filter((p) => !skipAsRoot.has(p.uid));
+
+  // A skipped spouse is already represented inline next to their partner --
+  // seed them into `visited` so the leftover pass below doesn't list them
+  // again as their own orphaned entry.
+  const visited = new Set(skipAsRoot);
+  const renderPerson = (person) => {
+    if (visited.has(person.uid)) return "";
+    visited.add(person.uid);
+    const spouse = person.spouse_id ? dynasty.people[person.spouse_id] : null;
+    const spouseLabel = spouse ? ` &bull; m. ${escapeHtml(spouse.name)}` : "";
+    const titleLabel = person.title ? ` &mdash; ${escapeHtml(person.title)}` : "";
+    const children = Object.values(dynasty.people)
+      .filter((p) => (p.father_id === person.uid || p.mother_id === person.uid) && !visited.has(p.uid))
+      .sort((a, b) => (a.birth_year ?? 0) - (b.birth_year ?? 0));
+    let html = `<li>${escapeHtml(person.name)} (${personYearsLabel(person)})${spouseLabel}${titleLabel}`;
+    if (children.length) {
+      html += `<ul>${children.map(renderPerson).join("")}</ul>`;
+    }
+    html += "</li>";
+    return html;
+  };
+
+  const rootsHtml = [...roots]
+    .sort((a, b) => (a.birth_year ?? 0) - (b.birth_year ?? 0))
+    .map(renderPerson)
+    .join("");
+  // Anyone left over (a reference cycle, or a parent that isn't itself a
+  // member of this house) still gets listed, so nobody silently disappears.
+  const leftoverHtml = members.filter((p) => !visited.has(p.uid)).map(renderPerson).join("");
+  return `<ul>${rootsHtml}${leftoverHtml}</ul>`;
+}
+
+function renderEventLog(houseId) {
+  const memberIds = new Set(houseMembers(houseId).map((p) => p.uid));
+  const list = el("house-event-log");
+  list.innerHTML = "";
+  const relevant = dynasty.events
+    .filter((e) => e.person_ids.some((id) => memberIds.has(id)))
+    .sort((a, b) => a.year - b.year);
+  for (const e of relevant) {
+    const li = document.createElement("li");
+    li.textContent = `${e.year}: ${e.description} `;
+    const del = document.createElement("button");
+    del.textContent = "×";
+    del.title = "Delete this event";
+    del.className = "event-delete-btn";
+    del.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      if (!confirm("Delete this event from the log?")) return;
+      await fetch(`/api/dynasty/events/${e.uid}`, { method: "DELETE" });
+      await fetchDynasty();
+    });
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+}
+
+function populateNationSelect(select) {
+  select.innerHTML = '<option value="">No nation</option>';
+  for (const n of world.nations) {
+    const option = document.createElement("option");
+    option.value = n.id;
+    option.textContent = n.name;
+    select.appendChild(option);
+  }
+}
+
+function populatePersonSelect(select, blankLabel) {
+  const previous = select.value;
+  select.innerHTML = "";
+  if (blankLabel) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = blankLabel;
+    select.appendChild(opt);
+  }
+  const people = Object.values(dynasty.people).sort((a, b) => a.name.localeCompare(b.name));
+  for (const p of people) {
+    const option = document.createElement("option");
+    option.value = p.uid;
+    option.textContent = `${p.name} (${personYearsLabel(p)})`;
+    select.appendChild(option);
+  }
+  if ([...select.options].some((o) => o.value === previous)) select.value = previous;
+}
+
+function renderHouseList() {
+  const list = el("house-list");
+  list.innerHTML = "";
+  const houses = Object.values(dynasty.houses);
+  el("house-count").textContent = houses.length;
+  for (const h of houses) {
+    const nation = h.nation_id != null ? world.nations.find((n) => n.id === h.nation_id) : null;
+    const li = document.createElement("li");
+    li.textContent = `${h.name}${nation ? ` — ${nation.name}` : ""}`;
+    if (h.uid === selectedHouseId) li.classList.add("active-row");
+    li.addEventListener("click", () => selectHouse(h.uid));
+    list.appendChild(li);
+  }
+}
+
+function selectHouse(hid) {
+  selectedHouseId = hid;
+  renderHouseList();
+  renderHouseDetail();
+}
+
+function renderHouseDetail() {
+  const panel = el("dynasty-house-detail");
+  const house = selectedHouseId ? dynasty.houses[selectedHouseId] : null;
+  if (!house) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  el("house-detail-name").textContent = house.name;
+  el("house-notes").value = house.notes || "";
+  el("btn-house-generate-founder").hidden = !!house.founder_id;
+  el("family-tree").innerHTML = buildFamilyTreeHTML(selectedHouseId);
+
+  populatePersonSelect(el("new-person-father"), "Unknown");
+  populatePersonSelect(el("new-person-mother"), "Unknown");
+  populatePersonSelect(el("marriage-a"), "");
+  populatePersonSelect(el("marriage-b"), "");
+  populatePersonSelect(el("birth-father"), "Unknown");
+  populatePersonSelect(el("birth-mother"), "Unknown");
+  populatePersonSelect(el("death-person"), "");
+
+  renderEventLog(selectedHouseId);
+  el("house-detail-error").hidden = true;
+}
+
+function renderDynasty() {
+  el("dynasty-year").value = dynasty.current_year;
+  populateNationSelect(el("new-house-nation"));
+  renderHouseList();
+  renderHouseDetail();
+}
+
+async function fetchDynasty() {
+  const res = await fetch("/api/dynasty");
+  if (!res.ok) return;
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+function showDynastyError(msg) {
+  const e = el("dynasty-error");
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+function showHouseDetailError(msg) {
+  const e = el("house-detail-error");
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+async function handleSetDynastyYear() {
+  const res = await fetch("/api/dynasty/year", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year: el("dynasty-year").value }),
+  });
+  if (!res.ok) {
+    showDynastyError((await res.json()).error || "failed to save year");
+    return;
+  }
+  el("dynasty-error").hidden = true;
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleCreateHouse() {
+  const res = await fetch("/api/dynasty/houses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: el("new-house-name").value,
+      nation_id: el("new-house-nation").value || null,
+    }),
+  });
+  if (!res.ok) {
+    showDynastyError((await res.json()).error || "failed to create house");
+    return;
+  }
+  el("dynasty-error").hidden = true;
+  el("new-house-name").value = "";
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleGenerateHouse() {
+  const res = await fetch("/api/dynasty/houses/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nation_id: el("new-house-nation").value || null }),
+  });
+  if (!res.ok) {
+    showDynastyError((await res.json()).error || "failed to generate house");
+    return;
+  }
+  el("dynasty-error").hidden = true;
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleSaveHouse() {
+  if (!selectedHouseId) return;
+  const res = await fetch(`/api/dynasty/houses/${selectedHouseId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes: el("house-notes").value }),
+  });
+  if (!res.ok) {
+    showHouseDetailError((await res.json()).error || "failed to save house");
+    return;
+  }
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleDeleteHouse() {
+  if (!selectedHouseId) return;
+  if (!confirm("Delete this house? People already recorded stay in the dynasty but lose their house link.")) return;
+  const res = await fetch(`/api/dynasty/houses/${selectedHouseId}`, { method: "DELETE" });
+  if (!res.ok) {
+    showHouseDetailError((await res.json()).error || "failed to delete house");
+    return;
+  }
+  selectedHouseId = null;
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleGenerateFounder() {
+  if (!selectedHouseId) return;
+  const res = await fetch(`/api/dynasty/houses/${selectedHouseId}/generate-founder`, { method: "POST" });
+  if (!res.ok) {
+    showHouseDetailError((await res.json()).error || "failed to generate founder");
+    return;
+  }
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleAddPerson() {
+  const res = await fetch("/api/dynasty/people", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: el("new-person-name").value,
+      sex: el("new-person-sex").value,
+      birth_year: el("new-person-birth-year").value || null,
+      father_id: el("new-person-father").value || null,
+      mother_id: el("new-person-mother").value || null,
+      house_id: selectedHouseId,
+    }),
+  });
+  if (!res.ok) {
+    showHouseDetailError((await res.json()).error || "failed to add person");
+    return;
+  }
+  el("new-person-name").value = "";
+  el("new-person-sex").value = "";
+  el("new-person-birth-year").value = "";
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleRecordMarriage() {
+  const personAId = el("marriage-a").value;
+  const personBId = el("marriage-b").value;
+  if (!personAId || !personBId) {
+    showHouseDetailError("choose both people first");
+    return;
+  }
+  const res = await fetch("/api/dynasty/events/marriage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ person_a_id: personAId, person_b_id: personBId, year: el("marriage-year").value }),
+  });
+  if (!res.ok) {
+    showHouseDetailError((await res.json()).error || "failed to record marriage");
+    return;
+  }
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleRecordBirth() {
+  const res = await fetch("/api/dynasty/events/birth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: el("birth-name").value,
+      sex: el("birth-sex").value,
+      year: el("birth-year").value,
+      father_id: el("birth-father").value || null,
+      mother_id: el("birth-mother").value || null,
+      house_id: selectedHouseId,
+    }),
+  });
+  if (!res.ok) {
+    showHouseDetailError((await res.json()).error || "failed to record birth");
+    return;
+  }
+  el("birth-name").value = "";
+  el("birth-sex").value = "";
+  el("birth-year").value = "";
+  dynasty = await res.json();
+  renderDynasty();
+}
+
+async function handleRecordDeath() {
+  const personId = el("death-person").value;
+  if (!personId) {
+    showHouseDetailError("choose a person first");
+    return;
+  }
+  const res = await fetch("/api/dynasty/events/death", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ person_id: personId, year: el("death-year").value }),
+  });
+  if (!res.ok) {
+    showHouseDetailError((await res.json()).error || "failed to record death");
+    return;
+  }
+  dynasty = await res.json();
+  renderDynasty();
+}
+
 // ---- Wiring ----
 
 el("btn-save").addEventListener("click", handleSave);
@@ -1113,5 +1496,15 @@ el("btn-roll-encounter-random").addEventListener("click", handleRollEncounterRan
 el("btn-create-share").addEventListener("click", handleCreateShare);
 el("btn-copy-share").addEventListener("click", handleCopyShare);
 el("btn-revoke-share").addEventListener("click", handleRevokeShare);
+el("btn-dynasty-year-save").addEventListener("click", handleSetDynastyYear);
+el("btn-create-house").addEventListener("click", handleCreateHouse);
+el("btn-generate-house").addEventListener("click", handleGenerateHouse);
+el("btn-house-save").addEventListener("click", handleSaveHouse);
+el("btn-house-delete").addEventListener("click", handleDeleteHouse);
+el("btn-house-generate-founder").addEventListener("click", handleGenerateFounder);
+el("btn-add-person").addEventListener("click", handleAddPerson);
+el("btn-record-marriage").addEventListener("click", handleRecordMarriage);
+el("btn-record-birth").addEventListener("click", handleRecordBirth);
+el("btn-record-death").addEventListener("click", handleRecordDeath);
 
 startApp();

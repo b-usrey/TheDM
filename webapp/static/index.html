@@ -83,6 +83,7 @@
         <button class="tab-btn" data-tab="nations">Nations</button>
         <button class="tab-btn" data-tab="settlements">Settlements</button>
         <button class="tab-btn" data-tab="poi">Points of Interest</button>
+        <button class="tab-btn" data-tab="dynasty">Dynasty</button>
         <button class="tab-btn" data-tab="tools">GM Tools</button>
       </nav>
 
@@ -376,6 +377,86 @@
           <p class="muted">Click "Place on Map", then click a spot on the map to add it there.</p>
           <ul id="poi-list"></ul>
           <p id="poi-error" class="error" hidden></p>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="dynasty" hidden>
+        <section id="dynasty-year-panel" class="panel">
+          <h2>Current Year</h2>
+          <p class="muted">A plain in-game year -- no calendar, just a number everything else is measured against.</p>
+          <div class="field">
+            <input id="dynasty-year" type="number" step="1">
+          </div>
+          <div class="actions">
+            <button id="btn-dynasty-year-save">Save</button>
+          </div>
+        </section>
+
+        <section id="dynasty-houses-panel" class="panel">
+          <h2>Houses (<span id="house-count">0</span>)</h2>
+          <ul id="house-list"></ul>
+
+          <p class="muted" style="margin-top:0.75rem">New house:</p>
+          <div class="field">
+            <label for="new-house-name">Name</label>
+            <input id="new-house-name" type="text" placeholder="House Ashworth">
+          </div>
+          <div class="field">
+            <label for="new-house-nation">Nation (optional)</label>
+            <select id="new-house-nation"><option value="">No nation</option></select>
+          </div>
+          <div class="actions">
+            <button id="btn-create-house">Create House</button>
+            <button id="btn-generate-house">Roll Ruling House</button>
+          </div>
+          <p id="dynasty-error" class="error" hidden></p>
+        </section>
+
+        <section id="dynasty-house-detail" class="panel" hidden>
+          <h2 id="house-detail-name">House</h2>
+          <div class="field">
+            <label for="house-notes">Notes</label>
+            <textarea id="house-notes" rows="3" maxlength="4000"></textarea>
+          </div>
+          <div class="actions">
+            <button id="btn-house-save">Save</button>
+            <button id="btn-house-generate-founder">Generate Founder</button>
+            <button id="btn-house-delete" class="danger">Delete House</button>
+          </div>
+
+          <h3>Family Tree</h3>
+          <div id="family-tree" class="muted"></div>
+
+          <h3>Add Person</h3>
+          <div class="field"><label for="new-person-name">Name</label><input id="new-person-name" type="text"></div>
+          <div class="field"><label for="new-person-sex">Sex (optional, free text)</label><input id="new-person-sex" type="text"></div>
+          <div class="field"><label for="new-person-birth-year">Birth year (optional)</label><input id="new-person-birth-year" type="number" step="1"></div>
+          <div class="field"><label for="new-person-father">Father (optional)</label><select id="new-person-father"><option value="">Unknown</option></select></div>
+          <div class="field"><label for="new-person-mother">Mother (optional)</label><select id="new-person-mother"><option value="">Unknown</option></select></div>
+          <div class="actions"><button id="btn-add-person">Add Person</button></div>
+
+          <h3>Record Marriage</h3>
+          <div class="field"><label for="marriage-a">Person A</label><select id="marriage-a"></select></div>
+          <div class="field"><label for="marriage-b">Person B</label><select id="marriage-b"></select></div>
+          <div class="field"><label for="marriage-year">Year</label><input id="marriage-year" type="number" step="1"></div>
+          <div class="actions"><button id="btn-record-marriage">Record Marriage</button></div>
+
+          <h3>Record Birth</h3>
+          <div class="field"><label for="birth-name">Child name</label><input id="birth-name" type="text"></div>
+          <div class="field"><label for="birth-sex">Sex (optional)</label><input id="birth-sex" type="text"></div>
+          <div class="field"><label for="birth-year">Year</label><input id="birth-year" type="number" step="1"></div>
+          <div class="field"><label for="birth-father">Father (optional)</label><select id="birth-father"><option value="">Unknown</option></select></div>
+          <div class="field"><label for="birth-mother">Mother (optional)</label><select id="birth-mother"><option value="">Unknown</option></select></div>
+          <div class="actions"><button id="btn-record-birth">Record Birth</button></div>
+
+          <h3>Record Death</h3>
+          <div class="field"><label for="death-person">Person</label><select id="death-person"></select></div>
+          <div class="field"><label for="death-year">Year</label><input id="death-year" type="number" step="1"></div>
+          <div class="actions"><button id="btn-record-death">Record Death</button></div>
+
+          <h3>Event Log</h3>
+          <ul id="house-event-log"></ul>
+          <p id="house-detail-error" class="error" hidden></p>
         </section>
       </div>
 
