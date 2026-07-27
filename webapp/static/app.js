@@ -7,6 +7,9 @@ let dragStart = null;          // {x, y} in map-wrap-relative pixels, while drag
 let pendingRegion = null;      // {x0, y0, x1, y1} in world grid coords, once a selection is made
 let placingPOI = false;        // armed via the "Place on Map" toggle in the POI tab
 let placingSettlement = false; // armed via the "Place on Map" toggle in the Settlements tab
+let measuringTravel = false;    // armed via "Pick Points on Map" in the GM Tools tab
+let travelPoints = [];          // up to 2 {x, y} world-grid points collected while measuring
+let pickingEncounter = false;   // armed via "Pick Spot on Map" in the GM Tools tab
 
 const el = (id) => document.getElementById(id);
 
@@ -113,6 +116,7 @@ async function fetchWorld() {
   world = await res.json();
   renderAll();
   refreshMyFiles();
+  refreshShareStatus();
 }
 
 async function refreshMyFiles() {
@@ -228,14 +232,19 @@ function handleMapMouseUp(e) {
   const fy1 = (Math.max(startPt.y, endPt.y) - startPt.imgY0) / startPt.imgH;
   const isClick = fx1 - fx0 < 0.01 || fy1 - fy0 < 0.01;
 
-  if (isClick && (placingPOI || placingSettlement)) {
+  if (isClick && (placingPOI || placingSettlement || measuringTravel || pickingEncounter)) {
     const gx = Math.round(((startPt.x - startPt.imgX0) / startPt.imgW) * world.width);
     const gy = Math.round(((startPt.y - startPt.imgY0) / startPt.imgH) * world.height);
     el("selection-box").style.display = "none";
     if (placingPOI) {
       handleCreatePOI(gx, gy);
-    } else {
+    } else if (placingSettlement) {
       handleCreateSettlement(gx, gy);
+    } else if (measuringTravel) {
+      handleTravelPoint(gx, gy);
+    } else if (pickingEncounter) {
+      disarmPickEncounter();
+      rollEncounterAt(gx, gy);
     }
     return;
   }
@@ -701,7 +710,11 @@ async function handleCreatePOI(x, y) {
 
 function handleTogglePlacePOI() {
   placingPOI = !placingPOI;
-  if (placingPOI) disarmPlaceSettlement();
+  if (placingPOI) {
+    disarmPlaceSettlement();
+    disarmTravelMeasure();
+    disarmPickEncounter();
+  }
   const btn = el("btn-place-poi");
   btn.classList.toggle("armed", placingPOI);
   btn.textContent = placingPOI ? "Click the map to place... (click here to cancel)" : "Place on Map";
@@ -743,6 +756,8 @@ function handleTogglePlaceSettlement() {
     placingPOI = false;
     el("btn-place-poi").classList.remove("armed");
     el("btn-place-poi").textContent = "Place on Map";
+    disarmTravelMeasure();
+    disarmPickEncounter();
   }
   const btn = el("btn-place-settlement");
   btn.classList.toggle("armed", placingSettlement);
@@ -894,6 +909,161 @@ async function handleRestoreBackup() {
   showFilesStatus("Restored from backup.");
 }
 
+// ---- GM Tools: travel calculator ----
+
+function disarmTravelMeasure() {
+  measuringTravel = false;
+  travelPoints = [];
+  el("btn-measure-travel").classList.remove("armed");
+  el("btn-measure-travel").textContent = "Pick Points on Map";
+}
+
+function handleToggleMeasureTravel() {
+  measuringTravel = !measuringTravel;
+  travelPoints = [];
+  if (measuringTravel) {
+    disarmPlaceSettlement();
+    placingPOI = false;
+    el("btn-place-poi").classList.remove("armed");
+    el("btn-place-poi").textContent = "Place on Map";
+    disarmPickEncounter();
+  }
+  const btn = el("btn-measure-travel");
+  btn.classList.toggle("armed", measuringTravel);
+  btn.textContent = measuringTravel ? "Click point A on the map... (click here to cancel)" : "Pick Points on Map";
+}
+
+async function handleTravelPoint(x, y) {
+  travelPoints.push({ x, y });
+  if (travelPoints.length === 1) {
+    el("btn-measure-travel").textContent = "Click point B on the map...";
+    return;
+  }
+  const [a, b] = travelPoints;
+  disarmTravelMeasure();
+
+  const res = await fetch("/api/tools/travel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ x0: a.x, y0: a.y, x1: b.x, y1: b.y }),
+  });
+  if (!res.ok) {
+    const e = el("travel-error");
+    e.textContent = (await res.json()).error || "failed to calculate travel time";
+    e.hidden = false;
+    return;
+  }
+  el("travel-error").hidden = true;
+  renderTravelResult(await res.json());
+}
+
+function renderTravelResult(data) {
+  const lines = [`Distance: ${data.distance_miles} mi (${data.distance_km} km)`];
+  if (data.mode === "sea") {
+    lines.push(`By sea (~2 knots): ${data.days.sea} days`);
+  } else {
+    lines.push(`Fast pace: ${data.days.fast} days`);
+    lines.push(`Normal pace: ${data.days.normal} days`);
+    lines.push(`Slow pace: ${data.days.slow} days`);
+    lines.push(`Terrain multiplier: &times;${data.terrain_multiplier}`);
+  }
+  if (data.note) lines.push(data.note);
+  el("travel-result").innerHTML = lines.map((l) => `<div>${l}</div>`).join("");
+}
+
+function handleClearTravel() {
+  disarmTravelMeasure();
+  el("travel-result").innerHTML = "";
+  el("travel-error").hidden = true;
+}
+
+// ---- GM Tools: random NPC ----
+
+async function handleRollNPC() {
+  const res = await fetch("/api/tools/npc");
+  const npc = await res.json();
+  el("npc-result").innerHTML =
+    `<div><strong>${npc.name}</strong> &mdash; ${npc.race} ${npc.occupation}</div>` +
+    `<div>Trait: ${npc.trait}</div>` +
+    `<div>Motivation: ${npc.motivation}</div>`;
+}
+
+// ---- GM Tools: random encounter ----
+
+function disarmPickEncounter() {
+  pickingEncounter = false;
+  el("btn-pick-encounter").classList.remove("armed");
+  el("btn-pick-encounter").textContent = "Pick Spot on Map";
+}
+
+function handleTogglePickEncounter() {
+  pickingEncounter = !pickingEncounter;
+  if (pickingEncounter) {
+    disarmPlaceSettlement();
+    placingPOI = false;
+    el("btn-place-poi").classList.remove("armed");
+    el("btn-place-poi").textContent = "Place on Map";
+    disarmTravelMeasure();
+  }
+  const btn = el("btn-pick-encounter");
+  btn.classList.toggle("armed", pickingEncounter);
+  btn.textContent = pickingEncounter ? "Click a spot on the map... (click here to cancel)" : "Pick Spot on Map";
+}
+
+async function rollEncounterAt(x, y) {
+  const res = await fetch(`/api/tools/encounter?x=${x}&y=${y}`);
+  renderEncounterResult(await res.json());
+}
+
+async function handleRollEncounterRandom() {
+  const res = await fetch("/api/tools/encounter");
+  renderEncounterResult(await res.json());
+}
+
+function renderEncounterResult(enc) {
+  el("encounter-result").innerHTML =
+    `<div><strong>${enc.biome}</strong> &mdash; difficulty: ${enc.difficulty}</div>` +
+    `<div>${enc.description}</div>`;
+}
+
+// ---- GM Tools: share link ----
+
+async function refreshShareStatus() {
+  const res = await fetch("/api/share");
+  if (!res.ok) return;
+  renderShareStatus(await res.json());
+}
+
+function renderShareStatus(data) {
+  el("share-no-link").hidden = !!data.token;
+  el("share-has-link").hidden = !data.token;
+  if (data.token) {
+    el("share-link-input").value = `${window.location.origin}${data.url}`;
+  }
+}
+
+async function handleCreateShare() {
+  const res = await fetch("/api/share", { method: "POST" });
+  if (!res.ok) {
+    el("share-status").textContent = (await res.json()).error || "failed to create link";
+    return;
+  }
+  renderShareStatus(await res.json());
+  el("share-status").textContent = "Link created.";
+}
+
+async function handleCopyShare() {
+  await navigator.clipboard.writeText(el("share-link-input").value);
+  el("share-status").textContent = "Copied to clipboard.";
+}
+
+async function handleRevokeShare() {
+  if (!confirm("Revoke this share link? Anyone using it will lose access.")) return;
+  await fetch("/api/share", { method: "DELETE" });
+  renderShareStatus({ token: null });
+  el("share-status").textContent = "Link revoked.";
+}
+
 // ---- Wiring ----
 
 el("btn-save").addEventListener("click", handleSave);
@@ -935,5 +1105,13 @@ el("btn-zoom-clear").addEventListener("click", handleZoomClear);
 el("btn-download-map").addEventListener("click", handleDownloadMap);
 el("btn-place-poi").addEventListener("click", handleTogglePlacePOI);
 el("btn-place-settlement").addEventListener("click", handleTogglePlaceSettlement);
+el("btn-measure-travel").addEventListener("click", handleToggleMeasureTravel);
+el("btn-clear-travel").addEventListener("click", handleClearTravel);
+el("btn-roll-npc").addEventListener("click", handleRollNPC);
+el("btn-pick-encounter").addEventListener("click", handleTogglePickEncounter);
+el("btn-roll-encounter-random").addEventListener("click", handleRollEncounterRandom);
+el("btn-create-share").addEventListener("click", handleCreateShare);
+el("btn-copy-share").addEventListener("click", handleCopyShare);
+el("btn-revoke-share").addEventListener("click", handleRevokeShare);
 
 startApp();

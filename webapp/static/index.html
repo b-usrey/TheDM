@@ -83,6 +83,7 @@
         <button class="tab-btn" data-tab="nations">Nations</button>
         <button class="tab-btn" data-tab="settlements">Settlements</button>
         <button class="tab-btn" data-tab="poi">Points of Interest</button>
+        <button class="tab-btn" data-tab="tools">GM Tools</button>
       </nav>
 
       <div class="tab-page" data-tab-page="map">
@@ -237,6 +238,27 @@
           <p id="files-status" class="muted"></p>
           <p id="files-error" class="error" hidden></p>
         </section>
+
+        <section id="share-panel" class="panel">
+          <h2>Share With Players</h2>
+          <p class="muted">A read-only link to this world &mdash; no login required, no editing,
+            and GM notes are hidden.</p>
+          <div id="share-no-link">
+            <div class="actions">
+              <button id="btn-create-share">Create Share Link</button>
+            </div>
+          </div>
+          <div id="share-has-link" hidden>
+            <div class="field">
+              <input id="share-link-input" type="text" readonly>
+            </div>
+            <div class="actions">
+              <button id="btn-copy-share">Copy Link</button>
+              <button id="btn-revoke-share" class="danger">Revoke Link</button>
+            </div>
+          </div>
+          <p id="share-status" class="muted"></p>
+        </section>
       </div>
 
       <div class="tab-page" data-tab-page="selection" hidden>
@@ -354,6 +376,37 @@
           <p class="muted">Click "Place on Map", then click a spot on the map to add it there.</p>
           <ul id="poi-list"></ul>
           <p id="poi-error" class="error" hidden></p>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="tools" hidden>
+        <section id="travel-panel" class="panel">
+          <h2>Travel Calculator</h2>
+          <p class="muted">Pick two points on the map to estimate the distance and travel time between them.</p>
+          <div class="actions">
+            <button id="btn-measure-travel">Pick Points on Map</button>
+            <button id="btn-clear-travel">Clear</button>
+          </div>
+          <div id="travel-result" class="muted"></div>
+          <p id="travel-error" class="error" hidden></p>
+        </section>
+
+        <section id="npc-panel" class="panel">
+          <h2>Random NPC</h2>
+          <div class="actions">
+            <button id="btn-roll-npc">Roll NPC</button>
+          </div>
+          <div id="npc-result" class="muted"></div>
+        </section>
+
+        <section id="encounter-panel" class="panel">
+          <h2>Random Encounter</h2>
+          <p class="muted">Encounters are drawn from the terrain at the chosen spot.</p>
+          <div class="actions">
+            <button id="btn-pick-encounter">Pick Spot on Map</button>
+            <button id="btn-roll-encounter-random">Roll at Random Spot</button>
+          </div>
+          <div id="encounter-result" class="muted"></div>
         </section>
       </div>
     </aside>

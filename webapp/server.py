@@ -38,7 +38,9 @@ from mapgen.settlements import Settlement, Tier
 from mapgen.worldmap import WorldMap, build_world
 from render.render_map import render_legend_to_png_bytes, render_to_png_bytes
 from webapp.dnd_api import register_dnd_routes
+from webapp.gm_tools import generate_encounter, generate_npc, travel_estimate
 from webapp.invites import InviteStore
+from webapp.shares import ShareStore
 from webapp.users import UserStore, clean_password, clean_username
 
 MAX_NAME_LEN = 63  # settlement/nation names are saved as numpy "U64" -- longer
@@ -251,6 +253,7 @@ def _rate_limited(bucket, key):
 os.makedirs(WORLDS_DIR, exist_ok=True)
 users = UserStore(os.path.join(WORLDS_DIR, "users.json"))
 invites = InviteStore(os.path.join(WORLDS_DIR, "invites.json"))
+shares = ShareStore(os.path.join(WORLDS_DIR, "shares.json"))
 print(f"User accounts + world files stored under: {WORLDS_DIR}")
 
 # One AppState per logged-in user, created lazily on first access and kept
@@ -289,7 +292,9 @@ state = LocalProxy(_get_or_create_state)
 
 @app.before_request
 def _require_login():
-    if request.path == "/" or request.path == "/app" or request.path.startswith("/static/") or request.path.startswith("/api/auth/"):
+    if (request.path == "/" or request.path == "/app" or request.path.startswith("/static/")
+            or request.path.startswith("/api/auth/") or request.path.startswith("/view/")
+            or request.path.startswith("/api/public/")):
         return None
     username = session.get("username")
     if username and not users.exists(username):
@@ -573,8 +578,8 @@ def _resolve_grid_kind():
     return kind if kind in ALLOWED_GRID_KINDS else "none"
 
 
-def _settlement_dict(sid, s):
-    h, w = state.world.biome.shape
+def _settlement_dict(world, sid, s):
+    h, w = world.biome.shape
     return {
         "id": sid,
         "name": s.name,
@@ -590,18 +595,18 @@ def _settlement_dict(sid, s):
         "resource": s.resource,
         "farmland_ceiling": s.farmland_ceiling,
         "fief_rank": s.fief_rank,
-        "duchy_name": _fief_name(state.world, "duchy", s.duchy_id),
-        "county_name": _fief_name(state.world, "county", s.county_id),
-        "barony_name": _fief_name(state.world, "barony", s.barony_id),
-        "duchy_gold": _fief_gold(state.world, "duchy", s.duchy_id),
-        "county_gold": _fief_gold(state.world, "county", s.county_id),
-        "barony_gold": _fief_gold(state.world, "barony", s.barony_id),
+        "duchy_name": _fief_name(world, "duchy", s.duchy_id),
+        "county_name": _fief_name(world, "county", s.county_id),
+        "barony_name": _fief_name(world, "barony", s.barony_id),
+        "duchy_gold": _fief_gold(world, "duchy", s.duchy_id),
+        "county_gold": _fief_gold(world, "county", s.county_id),
+        "barony_gold": _fief_gold(world, "barony", s.barony_id),
         "notes": s.notes,
     }
 
 
-def _poi_dict(pid, p):
-    h, w = state.world.biome.shape
+def _poi_dict(world, pid, p):
+    h, w = world.biome.shape
     return {
         "id": pid,
         "name": p.name,
@@ -614,8 +619,8 @@ def _poi_dict(pid, p):
     }
 
 
-def _nation_centroid_pct(nation_id):
-    mask = state.world.nation_id == nation_id
+def _nation_centroid_pct(world, nation_id):
+    mask = world.nation_id == nation_id
     if not mask.any():
         return None, None
     h, w = mask.shape
@@ -627,7 +632,7 @@ def _world_snapshot():
     world = state.world
     h, w = world.biome.shape
 
-    settlements = [_settlement_dict(i, s) for i, s in enumerate(world.settlements)]
+    settlements = [_settlement_dict(world, i, s) for i, s in enumerate(world.settlements)]
 
     nations = []
     for nid, name in enumerate(world.nation_names):
@@ -635,7 +640,7 @@ def _world_snapshot():
         capital = next((s for s in world.settlements if s.nation_id == nid and s.tier == Tier.CAPITAL), None)
         capital_id = next((i for i, s in enumerate(world.settlements)
                             if s.nation_id == nid and s.tier == Tier.CAPITAL), None)
-        x_pct, y_pct = _nation_centroid_pct(nid)
+        x_pct, y_pct = _nation_centroid_pct(world, nid)
         duke_title, count_title, baron_title = _nation_titles(world, nid)
         nations.append({
             "id": nid,
@@ -653,7 +658,7 @@ def _world_snapshot():
             "notes": _nation_notes(world, nid),
         })
 
-    pois = [_poi_dict(i, p) for i, p in enumerate(world.points_of_interest)]
+    pois = [_poi_dict(world, i, p) for i, p in enumerate(world.points_of_interest)]
 
     return {
         "width": w,
@@ -667,6 +672,80 @@ def _world_snapshot():
         "poi_kinds": list(POI_KINDS),
         "can_undo": bool(state._undo_stack),
     }
+
+
+def _public_world_snapshot(world):
+    """Same shape as _world_snapshot, but for a world loaded independently of
+    any logged-in session's AppState (see _load_shared_world) and with every
+    free-text GM/author note stripped -- the one field the code elsewhere
+    (Settlement.notes, WorldMap.nation_notes, PointOfInterest.notes) already
+    documents as "entirely user-authored" GM lore, not generated data. Also
+    omits path/seed/can_undo, which are GM/session bookkeeping with nothing
+    for a read-only viewer to do with them."""
+    h, w = world.biome.shape
+
+    settlements = []
+    for i, s in enumerate(world.settlements):
+        d = _settlement_dict(world, i, s)
+        d["notes"] = ""
+        settlements.append(d)
+
+    nations = []
+    for nid, name in enumerate(world.nation_names):
+        members = [s for s in world.settlements if s.nation_id == nid]
+        capital = next((s for s in world.settlements if s.nation_id == nid and s.tier == Tier.CAPITAL), None)
+        capital_id = next((i for i, s in enumerate(world.settlements)
+                            if s.nation_id == nid and s.tier == Tier.CAPITAL), None)
+        x_pct, y_pct = _nation_centroid_pct(world, nid)
+        duke_title, count_title, baron_title = _nation_titles(world, nid)
+        nations.append({
+            "id": nid,
+            "name": name,
+            "capital_id": capital_id,
+            "capital_name": capital.name if capital else None,
+            "settlement_count": len(members),
+            "total_population": sum(s.population for s in members),
+            "total_gold": sum(s.economic_output for s in members),
+            "x_pct": x_pct,
+            "y_pct": y_pct,
+            "duke_title": duke_title,
+            "count_title": count_title,
+            "baron_title": baron_title,
+            "notes": "",
+        })
+
+    pois = []
+    for i, p in enumerate(world.points_of_interest):
+        d = _poi_dict(world, i, p)
+        d["notes"] = ""
+        pois.append(d)
+
+    return {
+        "width": w,
+        "height": h,
+        "title": world.title,
+        "settlements": settlements,
+        "nations": nations,
+        "points_of_interest": pois,
+        "poi_kinds": list(POI_KINDS),
+    }
+
+
+def _load_shared_world(token):
+    """Resolve a share token to the WorldMap it currently points at, loaded
+    fresh from disk (not through _state_registry) -- a share link must keep
+    working for whichever file it names even if the owner has since switched
+    their own active world to something else."""
+    info = shares.get(token)
+    if not info:
+        return None
+    path = os.path.join(_user_dir(info["username"]), info["filename"])
+    if not os.path.exists(path):
+        return None
+    try:
+        return WorldMap.load(path)
+    except Exception:
+        return None
 
 
 @app.route("/")
@@ -761,7 +840,7 @@ def api_create_settlement():
         state.mark_dirty()
         state.save()
         _sync_create_settlement(state.world, settlement)
-        return jsonify(_settlement_dict(len(state.world.settlements) - 1, settlement))
+        return jsonify(_settlement_dict(state.world, len(state.world.settlements) - 1, settlement))
 
 
 @app.route("/api/settlements/<int:sid>/name", methods=["POST"])
@@ -778,7 +857,7 @@ def api_rename_settlement(sid):
         state.mark_dirty()
         state.save()
         _sync_update_settlement(state.world, state.world.settlements[sid].uid, name=name)
-        return jsonify(_settlement_dict(sid, state.world.settlements[sid]))
+        return jsonify(_settlement_dict(state.world, sid, state.world.settlements[sid]))
 
 
 @app.route("/api/settlements/<int:sid>/tier", methods=["POST"])
@@ -798,7 +877,7 @@ def api_retier_settlement(sid):
         state.mark_dirty()
         state.save()
         _sync_update_settlement(state.world, state.world.settlements[sid].uid, tier=tier)
-        return jsonify(_settlement_dict(sid, state.world.settlements[sid]))
+        return jsonify(_settlement_dict(state.world, sid, state.world.settlements[sid]))
 
 
 def _clean_nonneg_number(raw, field, cast):
@@ -842,7 +921,7 @@ def api_set_settlement_stats(sid):
         state.save()
         _sync_update_settlement(state.world, s.uid, population=population,
                                  area_km2=area_km2, economic_output=economic_output)
-        return jsonify(_settlement_dict(sid, s))
+        return jsonify(_settlement_dict(state.world, sid, s))
 
 
 @app.route("/api/settlements/<int:sid>/notes", methods=["POST"])
@@ -858,7 +937,7 @@ def api_set_settlement_notes(sid):
         state.world.settlements[sid].notes = notes
         state.save()
         _sync_update_settlement(state.world, state.world.settlements[sid].uid, notes=notes)
-        return jsonify(_settlement_dict(sid, state.world.settlements[sid]))
+        return jsonify(_settlement_dict(state.world, sid, state.world.settlements[sid]))
 
 
 @app.route("/api/settlements/<int:sid>", methods=["DELETE"])
@@ -976,7 +1055,7 @@ def api_create_poi():
         state.mark_dirty()
         state.save()
         _sync_create_poi(state.world, poi)
-        return jsonify(_poi_dict(len(state.world.points_of_interest) - 1, poi))
+        return jsonify(_poi_dict(state.world, len(state.world.points_of_interest) - 1, poi))
 
 
 @app.route("/api/pois/<int:pid>", methods=["POST"])
@@ -1010,7 +1089,7 @@ def api_update_poi(pid):
         state.mark_dirty()
         state.save()
         _sync_update_poi(state.world, poi.uid, name=name, kind=kind, notes=notes)
-        return jsonify(_poi_dict(pid, poi))
+        return jsonify(_poi_dict(state.world, pid, poi))
 
 
 @app.route("/api/pois/<int:pid>", methods=["DELETE"])
@@ -1242,6 +1321,103 @@ def api_zoom_region():
         region_world.save(path)
         state.use_world(region_world, path)
         return jsonify(_world_snapshot())
+
+
+# ---- GM utility rolls: NPCs, encounters, travel time ------------------------
+
+@app.route("/api/tools/npc")
+def api_tools_npc():
+    return jsonify(generate_npc())
+
+
+@app.route("/api/tools/encounter")
+def api_tools_encounter():
+    x = request.args.get("x", type=float)
+    y = request.args.get("y", type=float)
+    with state.lock:
+        h, w = state.world.biome.shape
+        if x is None or y is None:
+            # No spot given -- roll a location at random rather than
+            # requiring the GM to pick one just to get a quick flavor result.
+            rng = np.random.default_rng()
+            x, y = float(rng.integers(0, w)), float(rng.integers(0, h))
+        return jsonify(generate_encounter(state.world, x, y))
+
+
+@app.route("/api/tools/travel", methods=["POST"])
+def api_tools_travel():
+    body = request.get_json(silent=True) or {}
+    try:
+        x0, y0 = float(body.get("x0")), float(body.get("y0"))
+        x1, y1 = float(body.get("x1")), float(body.get("y1"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "x0/y0/x1/y1 must be numbers"}), 400
+    with state.lock:
+        return jsonify(travel_estimate(state.world, x0, y0, x1, y1))
+
+
+# ---- Read-only player-facing share links ------------------------------------
+
+@app.route("/api/share")
+def api_get_share():
+    filename = os.path.basename(state.path)
+    token = shares.find_for(session["username"], filename)
+    return jsonify({"token": token, "url": f"/view/{token}" if token else None})
+
+
+@app.route("/api/share", methods=["POST"])
+def api_create_share():
+    filename = os.path.basename(state.path)
+    token = shares.create(session["username"], filename)
+    return jsonify({"token": token, "url": f"/view/{token}"})
+
+
+@app.route("/api/share", methods=["DELETE"])
+def api_delete_share():
+    filename = os.path.basename(state.path)
+    shares.revoke_for(session["username"], filename)
+    return jsonify({"ok": True})
+
+
+@app.route("/view/<token>")
+def view_shared_map(token):
+    if not shares.get(token):
+        return "This share link is invalid or has been revoked.", 404
+    return send_from_directory(app.static_folder, "view.html")
+
+
+@app.route("/api/public/<token>/world")
+def api_public_world(token):
+    world = _load_shared_world(token)
+    if world is None:
+        return jsonify({"error": "invalid or revoked link"}), 404
+    return jsonify(_public_world_snapshot(world))
+
+
+@app.route("/api/public/<token>/render.png")
+def api_public_render_png(token):
+    world = _load_shared_world(token)
+    if world is None:
+        return jsonify({"error": "invalid or revoked link"}), 404
+    style = _resolve_style()
+    show_duchy, show_county, show_barony = _flag("duchy"), _flag("county"), _flag("barony")
+    grid_kind = _resolve_grid_kind()
+    grid_miles = request.args.get("grid_size", type=float)
+    grid_cell_size = _grid_cell_size_from_miles(world, grid_miles)
+    png = render_to_png_bytes(
+        world, style=style, labels=True, legend=False,
+        show_duchy=show_duchy, show_county=show_county, show_barony=show_barony,
+        grid_kind=grid_kind, grid_cell_size=grid_cell_size)
+    return app.response_class(png, mimetype="image/png")
+
+
+@app.route("/api/public/<token>/legend.png")
+def api_public_legend_png(token):
+    world = _load_shared_world(token)
+    if world is None:
+        return jsonify({"error": "invalid or revoked link"}), 404
+    png = render_legend_to_png_bytes(world, style=_resolve_style())
+    return app.response_class(png, mimetype="image/png")
 
 
 def _admin_user_stats(username):

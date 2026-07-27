@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shared World Map</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 id="map-title-header">World Map</h1>
+    <span class="badge">Read-only shared view</span>
+    <label id="style-label" for="style-select">Style
+      <select id="style-select">
+        <option value="classic">Classic (parchment)</option>
+        <option value="atmospheric">Atmospheric (relief)</option>
+        <option value="realistic">Realistic (hillshaded)</option>
+      </select>
+    </label>
+  </header>
+
+  <main id="view-main">
+    <div id="map-pane">
+      <div id="map-wrap">
+        <img id="map-img" alt="World map">
+        <div id="marker-layer"></div>
+        <img id="legend-img" alt="Legend">
+      </div>
+    </div>
+
+    <aside id="sidebar">
+      <nav id="tab-nav">
+        <button class="tab-btn active" data-tab="map">Map</button>
+        <button class="tab-btn" data-tab="nations">Nations</button>
+        <button class="tab-btn" data-tab="settlements">Settlements</button>
+        <button class="tab-btn" data-tab="poi">Points of Interest</button>
+        <button class="tab-btn" data-tab="selection">Details</button>
+      </nav>
+
+      <div class="tab-page" data-tab-page="map">
+        <section class="panel">
+          <h2>Nations In View</h2>
+          <p id="nations-in-view" class="muted"></p>
+        </section>
+
+        <section class="panel">
+          <h2>Feudal Boundaries</h2>
+          <label class="boundary-toggle">
+            <input type="checkbox" id="toggle-duchy">
+            <span class="swatch swatch-duchy"></span> Duchies
+          </label>
+          <label class="boundary-toggle">
+            <input type="checkbox" id="toggle-county">
+            <span class="swatch swatch-county"></span> Counties
+          </label>
+          <label class="boundary-toggle">
+            <input type="checkbox" id="toggle-barony">
+            <span class="swatch swatch-barony"></span> Baronies
+          </label>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="nations" hidden>
+        <section class="panel">
+          <h2>Nations (<span id="nation-count">0</span>)</h2>
+          <ul id="nation-list"></ul>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="settlements" hidden>
+        <section class="panel">
+          <h2>Settlements (<span id="settlement-count">0</span>)</h2>
+          <input id="settlement-search" type="text" placeholder="Search by name...">
+          <div id="settlement-table-wrap">
+            <table id="settlement-table">
+              <thead>
+                <tr><th>Name</th><th>Tier</th><th>Nation</th><th>Pop.</th></tr>
+              </thead>
+              <tbody id="settlement-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="poi" hidden>
+        <section class="panel">
+          <h2>Points of Interest (<span id="poi-count">0</span>)</h2>
+          <ul id="poi-list"></ul>
+        </section>
+      </div>
+
+      <div class="tab-page" data-tab-page="selection" hidden>
+        <section class="panel">
+          <h2>Details</h2>
+          <p id="detail-empty" class="muted">Click a marker on the map, or a row in the Nations/Settlements/Points of Interest tabs, to see details here.</p>
+          <div id="detail-body" hidden></div>
+        </section>
+      </div>
+    </aside>
+  </main>
+  <p id="view-error" class="error" hidden></p>
+</div>
+<script src="/static/view.js"></script>
+</body>
+</html>

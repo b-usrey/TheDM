@@ -359,3 +359,19 @@ main {
   font-size: 0.8rem;
 }
 #btn-logout:hover { background: #4a3f30; }
+
+.badge {
+  font-size: 0.75rem;
+  color: #ffd54a;
+  border: 1px solid #6a5238;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  white-space: nowrap;
+}
+
+#view-error {
+  padding: 1rem;
+  font-size: 1rem;
+}
+
+#detail-body h3 { margin: 0 0 0.3rem 0; }
