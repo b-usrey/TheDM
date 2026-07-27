@@ -105,6 +105,12 @@ function showTab(tab) {
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === tab);
   });
+  // The Dynasty tab replaces the map image with the family-tree canvas --
+  // a tree is inherently wide/tall, so it gets the same main-pane real
+  // estate the map itself uses instead of being squeezed into the sidebar.
+  const isDynasty = tab === "dynasty";
+  el("map-pane").hidden = isDynasty;
+  el("dynasty-pane").hidden = !isDynasty;
 }
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -1085,14 +1091,21 @@ function houseMembers(houseId) {
   return Object.values(dynasty.people).filter((p) => p.house_id === houseId);
 }
 
-function buildFamilyTreeHTML(houseId) {
+// ---- Family tree: data -> layout -> SVG ----
+//
+// A "node" pairs one person with their spouse (if any) as a single visual
+// unit -- a couple's two boxes plus the marriage line between them -- since
+// that's how a genealogy chart reads, not as two independent people. Layout
+// is a simple non-overlapping subtree-width algorithm (each node reserves
+// enough horizontal "slots" for the wider of itself or its children, then
+// centers itself over whatever span it was given): not the tightest packing
+// possible, but house sizes here are dozens of people, not thousands, so
+// it doesn't need to be.
+
+function buildDynastyTreeData(houseId) {
   const members = houseMembers(houseId);
-  if (members.length === 0) {
-    return "<p>No people recorded in this house yet.</p>";
-  }
-  // Roots: members with no parent recorded in this dynasty at all -- either
-  // truly unknown ancestry, or a spouse who joined the house by marriage
-  // rather than birth.
+  if (members.length === 0) return [];
+
   const rootCandidates = members.filter((p) => {
     const fatherKnown = p.father_id && dynasty.people[p.father_id];
     const motherKnown = p.mother_id && dynasty.people[p.mother_id];
@@ -1100,9 +1113,9 @@ function buildFamilyTreeHTML(houseId) {
   });
 
   // A married couple who are both otherwise-rootless members of this same
-  // house would each qualify as their own root, duplicating the pair --
-  // keep only one (the earlier-born, ties broken by uid) as the actual
-  // root; the other still appears, just as that root's inline spouse label.
+  // house would each qualify as their own root -- keep only one (the
+  // earlier-born, ties broken by uid) as the actual root; the other is
+  // drawn as that root's spouse box instead.
   const rootIds = new Set(rootCandidates.map((p) => p.uid));
   const skipAsRoot = new Set();
   for (const p of rootCandidates) {
@@ -1115,35 +1128,178 @@ function buildFamilyTreeHTML(houseId) {
   }
   const roots = rootCandidates.filter((p) => !skipAsRoot.has(p.uid));
 
-  // A skipped spouse is already represented inline next to their partner --
-  // seed them into `visited` so the leftover pass below doesn't list them
-  // again as their own orphaned entry.
-  const visited = new Set(skipAsRoot);
-  const renderPerson = (person) => {
-    if (visited.has(person.uid)) return "";
+  // Deliberately NOT seeded with skipAsRoot: a skipped duplicate-root is
+  // always the spouse_id of the root that won (marriages are recorded
+  // symmetrically), so that root's own buildNode call below naturally
+  // claims them as its spouse box and marks them visited. Seeding visited
+  // up front would beat buildNode to it and leave the root spouseless.
+  const visited = new Set();
+  const buildNode = (person) => {
     visited.add(person.uid);
-    const spouse = person.spouse_id ? dynasty.people[person.spouse_id] : null;
-    const spouseLabel = spouse ? ` &bull; m. ${escapeHtml(spouse.name)}` : "";
-    const titleLabel = person.title ? ` &mdash; ${escapeHtml(person.title)}` : "";
-    const children = Object.values(dynasty.people)
-      .filter((p) => (p.father_id === person.uid || p.mother_id === person.uid) && !visited.has(p.uid))
-      .sort((a, b) => (a.birth_year ?? 0) - (b.birth_year ?? 0));
-    let html = `<li>${escapeHtml(person.name)} (${personYearsLabel(person)})${spouseLabel}${titleLabel}`;
-    if (children.length) {
-      html += `<ul>${children.map(renderPerson).join("")}</ul>`;
+    let spouse = null;
+    if (person.spouse_id) {
+      const candidate = dynasty.people[person.spouse_id];
+      // Only pair them visually if the spouse hasn't already been drawn
+      // elsewhere (e.g. another node's own spouse) -- a rare cross-branch
+      // marriage still shows the person, just without a duplicate box for
+      // a spouse already on the canvas.
+      if (candidate && !visited.has(candidate.uid)) {
+        spouse = candidate;
+        visited.add(candidate.uid);
+      }
     }
-    html += "</li>";
-    return html;
+    const parentIds = new Set([person.uid, ...(spouse ? [spouse.uid] : [])]);
+    const children = Object.values(dynasty.people)
+      .filter((p) => !visited.has(p.uid) && (parentIds.has(p.father_id) || parentIds.has(p.mother_id)))
+      .sort((a, b) => (a.birth_year ?? 0) - (b.birth_year ?? 0))
+      .map(buildNode);
+    return { person, spouse, children };
   };
 
-  const rootsHtml = [...roots]
-    .sort((a, b) => (a.birth_year ?? 0) - (b.birth_year ?? 0))
-    .map(renderPerson)
-    .join("");
+  // A plain .map() here would double-render anyone whose only tie to this
+  // house is having married into a root's subtree (e.g. Cassia: no parents
+  // of her own, so a root candidate by that rule, but also consumed as
+  // Aldric's spouse while building his father's subtree) -- `visited` only
+  // grows correctly if each root is checked *as we go*, not filtered up
+  // front against a snapshot of `visited` before any subtree gets built.
+  const rootNodes = [];
+  for (const p of [...roots].sort((a, b) => (a.birth_year ?? 0) - (b.birth_year ?? 0))) {
+    if (!visited.has(p.uid)) rootNodes.push(buildNode(p));
+  }
   // Anyone left over (a reference cycle, or a parent that isn't itself a
-  // member of this house) still gets listed, so nobody silently disappears.
-  const leftoverHtml = members.filter((p) => !visited.has(p.uid)).map(renderPerson).join("");
-  return `<ul>${rootsHtml}${leftoverHtml}</ul>`;
+  // member of this house) still gets their own tree, so nobody silently
+  // disappears from the canvas.
+  const leftoverNodes = members.filter((p) => !visited.has(p.uid)).map(buildNode);
+  return [...rootNodes, ...leftoverNodes];
+}
+
+function computeSubtreeWidth(node) {
+  const selfWidth = node.spouse ? 2 : 1;
+  node.width = node.children.length === 0
+    ? selfWidth
+    : Math.max(selfWidth, node.children.reduce((sum, c) => sum + computeSubtreeWidth(c), 0));
+  return node.width;
+}
+
+function assignTreePositions(node, left, depth) {
+  node.left = left;
+  node.depth = depth;
+  node.centerSlot = left + node.width / 2;
+  let cursor = left;
+  for (const child of node.children) {
+    assignTreePositions(child, cursor, depth + 1);
+    cursor += child.width;
+  }
+}
+
+function layoutForest(roots) {
+  let cursor = 0;
+  for (const root of roots) {
+    computeSubtreeWidth(root);
+    assignTreePositions(root, cursor, 0);
+    cursor += root.width;
+  }
+  return cursor;
+}
+
+const TREE_SLOT_WIDTH = 140;
+const TREE_ROW_HEIGHT = 110;
+const TREE_BOX_WIDTH = 120;
+const TREE_BOX_HEIGHT = 46;
+
+function personBoxCenterX(node) {
+  const spanCenterPx = node.centerSlot * TREE_SLOT_WIDTH;
+  return node.spouse ? spanCenterPx - TREE_SLOT_WIDTH / 2 : spanCenterPx;
+}
+
+function spouseBoxCenterX(node) {
+  return node.centerSlot * TREE_SLOT_WIDTH + TREE_SLOT_WIDTH / 2;
+}
+
+function personBoxSVG(person, cx, y) {
+  const x = cx - TREE_BOX_WIDTH / 2;
+  const deceased = person.death_year != null;
+  const parts = [
+    `<g>`,
+    `<rect class="tree-node-box${deceased ? " deceased" : ""}" x="${x}" y="${y}" width="${TREE_BOX_WIDTH}" height="${TREE_BOX_HEIGHT}" rx="5"></rect>`,
+    `<text class="tree-node-name" x="${cx}" y="${y + 17}" text-anchor="middle">${escapeHtml(person.name)}</text>`,
+    `<text class="tree-node-years" x="${cx}" y="${y + 32}" text-anchor="middle">${escapeHtml(personYearsLabel(person))}</text>`,
+  ];
+  if (person.title) {
+    parts.push(`<text class="tree-node-title" x="${cx}" y="${y + 43}" text-anchor="middle">${escapeHtml(person.title)}</text>`);
+  }
+  parts.push(`</g>`);
+  return parts.join("");
+}
+
+function renderNodeSVG(node, parts) {
+  const y = node.depth * TREE_ROW_HEIGHT;
+  const personCx = personBoxCenterX(node);
+  parts.push(personBoxSVG(node.person, personCx, y));
+
+  if (node.spouse) {
+    const spouseCx = spouseBoxCenterX(node);
+    parts.push(personBoxSVG(node.spouse, spouseCx, y));
+    parts.push(`<line class="tree-line-marriage" x1="${personCx + TREE_BOX_WIDTH / 2}" y1="${y + TREE_BOX_HEIGHT / 2}" ` +
+      `x2="${spouseCx - TREE_BOX_WIDTH / 2}" y2="${y + TREE_BOX_HEIGHT / 2}"></line>`);
+  }
+
+  if (node.children.length > 0) {
+    const connectorX = node.centerSlot * TREE_SLOT_WIDTH;
+    const busY = y + TREE_BOX_HEIGHT + (TREE_ROW_HEIGHT - TREE_BOX_HEIGHT) / 2;
+    parts.push(`<line class="tree-line-descent" x1="${connectorX}" y1="${y + TREE_BOX_HEIGHT}" x2="${connectorX}" y2="${busY}"></line>`);
+    const childXs = node.children.map((c) => c.centerSlot * TREE_SLOT_WIDTH);
+    if (node.children.length > 1) {
+      parts.push(`<line class="tree-line-descent" x1="${Math.min(...childXs)}" y1="${busY}" x2="${Math.max(...childXs)}" y2="${busY}"></line>`);
+    }
+    for (const child of node.children) {
+      const childX = child.centerSlot * TREE_SLOT_WIDTH;
+      parts.push(`<line class="tree-line-descent" x1="${childX}" y1="${busY}" x2="${childX}" y2="${child.depth * TREE_ROW_HEIGHT}"></line>`);
+      renderNodeSVG(child, parts);
+    }
+  }
+}
+
+function renderDynastyTree(houseId) {
+  const header = el("dynasty-tree-title");
+  const svg = el("dynasty-tree-svg");
+  const house = houseId ? dynasty.houses[houseId] : null;
+
+  if (!house) {
+    header.textContent = "Select a house";
+    svg.innerHTML = "";
+    svg.setAttribute("width", "0");
+    svg.setAttribute("height", "0");
+    return;
+  }
+
+  header.textContent = house.name;
+  const roots = buildDynastyTreeData(houseId);
+  if (roots.length === 0) {
+    svg.innerHTML = '<text x="10" y="24" fill="#a89b84" font-size="13">No people recorded in this house yet.</text>';
+    svg.setAttribute("width", "400");
+    svg.setAttribute("height", "40");
+    return;
+  }
+
+  const totalSlots = layoutForest(roots);
+  let maxDepth = 0;
+  const walk = (node) => {
+    maxDepth = Math.max(maxDepth, node.depth);
+    node.children.forEach(walk);
+  };
+  roots.forEach(walk);
+
+  const width = Math.max(totalSlots * TREE_SLOT_WIDTH, TREE_SLOT_WIDTH) + 20;
+  const height = (maxDepth + 1) * TREE_ROW_HEIGHT + 20;
+
+  const parts = [];
+  for (const root of roots) renderNodeSVG(root, parts);
+
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
+  svg.setAttribute("viewBox", `-10 -10 ${width} ${height}`);
+  svg.innerHTML = parts.join("");
 }
 
 function renderEventLog(houseId) {
@@ -1219,6 +1375,7 @@ function selectHouse(hid) {
   selectedHouseId = hid;
   renderHouseList();
   renderHouseDetail();
+  renderDynastyTree(selectedHouseId);
 }
 
 function renderHouseDetail() {
@@ -1232,7 +1389,6 @@ function renderHouseDetail() {
   el("house-detail-name").textContent = house.name;
   el("house-notes").value = house.notes || "";
   el("btn-house-generate-founder").hidden = !!house.founder_id;
-  el("family-tree").innerHTML = buildFamilyTreeHTML(selectedHouseId);
 
   populatePersonSelect(el("new-person-father"), "Unknown");
   populatePersonSelect(el("new-person-mother"), "Unknown");
@@ -1251,6 +1407,7 @@ function renderDynasty() {
   populateNationSelect(el("new-house-nation"));
   renderHouseList();
   renderHouseDetail();
+  renderDynastyTree(selectedHouseId);
 }
 
 async function fetchDynasty() {

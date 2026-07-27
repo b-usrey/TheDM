@@ -431,3 +431,20 @@ main {
   padding: 0 0.3rem;
 }
 .event-delete-btn:hover { color: #ff8a80; }
+
+#dynasty-pane {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+}
+#dynasty-tree-header { margin-bottom: 0.75rem; }
+#dynasty-tree-header h2 { margin: 0; font-size: 1.1rem; color: #e8e0d0; }
+#dynasty-tree-wrap { overflow: auto; }
+
+.tree-node-box { fill: #241f1a; stroke: #4a3728; stroke-width: 1; }
+.tree-node-box.deceased { fill: #1c1a17; stroke: #5a4838; stroke-dasharray: 4 2; }
+.tree-node-name { fill: #e8e0d0; font: 13px system-ui, sans-serif; }
+.tree-node-years { fill: #a89b84; font: 11px system-ui, sans-serif; }
+.tree-node-title { fill: #ffd54a; font: 11px system-ui, sans-serif; }
+.tree-line-marriage { stroke: #8a7030; stroke-width: 2; }
+.tree-line-descent { stroke: #4a3728; stroke-width: 1.5; }

@@ -75,6 +75,15 @@
       </div>
     </div>
 
+    <div id="dynasty-pane" hidden>
+      <div id="dynasty-tree-header">
+        <h2 id="dynasty-tree-title">Select a house</h2>
+      </div>
+      <div id="dynasty-tree-wrap">
+        <svg id="dynasty-tree-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </div>
+
     <aside id="sidebar">
       <nav id="tab-nav">
         <button class="tab-btn active" data-tab="map">Map</button>
@@ -424,8 +433,7 @@
             <button id="btn-house-delete" class="danger">Delete House</button>
           </div>
 
-          <h3>Family Tree</h3>
-          <div id="family-tree" class="muted"></div>
+          <p class="muted">The family tree for this house is shown in the main pane.</p>
 
           <h3>Add Person</h3>
           <div class="field"><label for="new-person-name">Name</label><input id="new-person-name" type="text"></div>
