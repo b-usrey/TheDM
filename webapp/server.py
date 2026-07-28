@@ -267,6 +267,40 @@ def _rate_limited(bucket, key):
         return False
 
 
+# In-memory "last active" + cumulative-time tracking, shown on /admin --
+# deliberately separate from UserStore: last_active is a live/session
+# concept (reset on restart is fine, even desirable), while cumulative
+# seconds gets flushed into UserStore periodically rather than on every
+# single request, which would mean a disk write per API call (a single
+# page load fires a dozen-plus).
+_ACTIVITY_GAP_SECONDS = 300   # gap larger than this = they went idle/closed
+                              # the tab; don't count it as active time
+_ACTIVITY_FLUSH_SECONDS = 30  # batch persisted increments to bound disk writes
+_activity_lock = threading.Lock()
+_last_active_at = {}          # username -> unix timestamp, in-memory only
+_pending_activity_seconds = defaultdict(float)  # username -> unflushed seconds
+
+
+def _track_activity(username):
+    now = time.time()
+    with _activity_lock:
+        prev = _last_active_at.get(username)
+        _last_active_at[username] = now
+        if prev is None:
+            return
+        delta = now - prev
+        if delta <= 0 or delta >= _ACTIVITY_GAP_SECONDS:
+            return
+        _pending_activity_seconds[username] += delta
+        pending = _pending_activity_seconds[username]
+        if pending < _ACTIVITY_FLUSH_SECONDS:
+            return
+        _pending_activity_seconds[username] = 0.0
+    # Persisted outside the lock -- UserStore has its own lock, and there's
+    # no need to hold this one across a file write.
+    users.add_cumulative_seconds(username, pending)
+
+
 os.makedirs(WORLDS_DIR, exist_ok=True)
 users = UserStore(os.path.join(WORLDS_DIR, "users.json"))
 invites = InviteStore(os.path.join(WORLDS_DIR, "invites.json"))
@@ -327,6 +361,7 @@ def _require_login():
         if request.path == "/dnd" or request.path.startswith("/dnd/") or request.path == "/admin":
             return redirect("/app")
         return jsonify({"error": "login required"}), 401
+    _track_activity(username)
     return None
 
 
@@ -368,6 +403,7 @@ def api_auth_signup():
         # password earlier must not burn a tester's one-time code.
         invites.consume(single_use_code, username)
     session["username"] = username
+    users.record_login(username)
     return jsonify({"username": username})
 
 
@@ -381,6 +417,7 @@ def api_auth_login():
     if not username or not users.verify(username, password):
         return jsonify({"error": "invalid username or password"}), 401
     session["username"] = username
+    users.record_login(username)
     return jsonify({"username": username})
 
 
@@ -1884,12 +1921,21 @@ def _admin_user_stats(username):
     scenario_count = 0
     if os.path.isdir(scenarios_dir):
         scenario_count = len([f for f in os.listdir(scenarios_dir) if f.endswith(".json")])
+    stats = users.get_stats(username)
+    with _activity_lock:
+        # Include not-yet-flushed seconds so the figure shown here doesn't
+        # lag behind by up to _ACTIVITY_FLUSH_SECONDS.
+        cumulative_seconds = stats["cumulative_seconds"] + _pending_activity_seconds.get(username, 0.0)
+        last_active = _last_active_at.get(username)
     return {
         "username": username,
         "world_files": world_files,
         "total_bytes": total_bytes,
         "scenario_count": scenario_count,
         "is_admin": username == ADMIN_USERNAME,
+        "last_login": stats["last_login"],
+        "last_active": last_active,
+        "cumulative_seconds": cumulative_seconds,
     }
 
 

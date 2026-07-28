@@ -6,6 +6,7 @@ import json
 import os
 import re
 import threading
+import time
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -59,6 +60,37 @@ class UserStore:
             del self._users[username]
             self._persist()
             return True
+
+    def record_login(self, username):
+        """Called on every successful login -- last_login is persisted
+        (unlike last-active, which is intentionally in-memory only; see
+        server.py) since "when did they last actually log in" is a
+        meaningful account fact that should survive a server restart."""
+        with self._lock:
+            record = self._users.get(username)
+            if record is None:
+                return
+            record["last_login"] = time.time()
+            self._persist()
+
+    def add_cumulative_seconds(self, username, seconds):
+        """Adds to a running total of active time, flushed periodically by
+        server.py's activity tracker rather than on every single request --
+        see _track_activity for why."""
+        with self._lock:
+            record = self._users.get(username)
+            if record is None:
+                return
+            record["cumulative_seconds"] = record.get("cumulative_seconds", 0.0) + seconds
+            self._persist()
+
+    def get_stats(self, username):
+        with self._lock:
+            record = self._users.get(username) or {}
+            return {
+                "last_login": record.get("last_login"),
+                "cumulative_seconds": record.get("cumulative_seconds", 0.0),
+            }
 
 
 def clean_username(raw):

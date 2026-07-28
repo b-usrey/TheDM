@@ -61,7 +61,10 @@
   <p id="status" class="muted">Loading…</p>
   <table id="table" hidden>
     <thead>
-      <tr><th>Username</th><th>World Files</th><th>Storage</th><th>D&amp;D Scenarios</th><th></th></tr>
+      <tr>
+        <th>Username</th><th>World Files</th><th>Storage</th><th>D&amp;D Scenarios</th>
+        <th>Last Login</th><th>Last Active</th><th>Time Logged In</th><th></th>
+      </tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
@@ -90,6 +93,29 @@
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  function formatRelative(ts) {
+    if (!ts) return "Never";
+    const diff = (Date.now() / 1000) - ts;
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 30 * 86400) return `${Math.floor(diff / 86400)}d ago`;
+    return formatDate(ts);
+  }
+
+  function formatDuration(seconds) {
+    if (!seconds || seconds < 1) return "—";
+    const totalMinutes = Math.floor(seconds / 60);
+    const days = Math.floor(totalMinutes / (60 * 24));
+    const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours) parts.push(`${hours}h`);
+    if (minutes || parts.length === 0) parts.push(`${minutes}m`);
+    return parts.join(" ");
+  }
+
   async function load() {
     const status = document.getElementById("status");
     const table = document.getElementById("table");
@@ -109,6 +135,9 @@
           <td>${u.world_files.length ? u.world_files.join(", ") : "—"}</td>
           <td>${formatBytes(u.total_bytes)}</td>
           <td>${u.scenario_count}</td>
+          <td>${u.last_login ? formatDate(u.last_login) : "Never"}</td>
+          <td>${formatRelative(u.last_active)}</td>
+          <td>${formatDuration(u.cumulative_seconds)}</td>
           <td>${u.is_admin ? "" : `<button class="del-btn" onclick="deleteUser('${u.username}')">Delete</button>`}</td>
         </tr>
       `).join("");
