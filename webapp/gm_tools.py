@@ -145,7 +145,7 @@ def generate_npc():
     # across independent quick-rolls.
     namer = NameGenerator(int(rng.integers(0, 2**31)))
     return {
-        "name": namer.settlement_name(culture_idx=int(rng.integers(0, 3)), max_len=16),
+        "name": namer.person_name(culture_idx=int(rng.integers(0, 3))),
         "race": str(rng.choice(_RACES)),
         "occupation": str(rng.choice(_OCCUPATIONS)),
         "trait": str(rng.choice(_TRAITS)),

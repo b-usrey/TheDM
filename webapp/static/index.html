@@ -78,9 +78,16 @@
     <div id="dynasty-pane" hidden>
       <div id="dynasty-tree-header">
         <h2 id="dynasty-tree-title">Select a house</h2>
+        <nav id="dynasty-view-toggle">
+          <button class="view-toggle-btn active" data-view="tree">Tree</button>
+          <button class="view-toggle-btn" data-view="diary">Diary</button>
+        </nav>
       </div>
       <div id="dynasty-tree-wrap">
         <svg id="dynasty-tree-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div id="dynasty-diary-wrap" hidden>
+        <article id="dynasty-diary"></article>
       </div>
     </div>
 
@@ -433,7 +440,27 @@
             <button id="btn-house-delete" class="danger">Delete House</button>
           </div>
 
-          <p class="muted">The family tree for this house is shown in the main pane.</p>
+          <p class="muted">The family tree for this house is shown in the main pane. Click anyone in it to edit them here.</p>
+
+          <div id="dynasty-person-detail" hidden>
+            <h3>Selected Person</h3>
+            <div class="field"><label for="edit-person-name">Name</label><input id="edit-person-name" type="text" maxlength="80"></div>
+            <div class="field"><label for="edit-person-sex">Sex (optional, free text)</label><input id="edit-person-sex" type="text"></div>
+            <div class="field"><label for="edit-person-title">Title (optional)</label><input id="edit-person-title" type="text" maxlength="4000"></div>
+            <div class="field"><label for="edit-person-notes">Notes / biography</label><textarea id="edit-person-notes" rows="3" maxlength="4000"></textarea></div>
+            <div class="actions">
+              <button id="btn-person-save">Save</button>
+              <button id="btn-person-cancel">Cancel</button>
+            </div>
+            <div class="actions">
+              <button id="btn-person-generate-spouse">Generate Spouse</button>
+              <button id="btn-person-generate-child">Generate Child</button>
+            </div>
+            <div class="actions">
+              <button id="btn-person-delete" class="danger">Delete Person</button>
+            </div>
+            <p id="person-detail-error" class="error" hidden></p>
+          </div>
 
           <h3>Add Person</h3>
           <div class="field"><label for="new-person-name">Name</label><input id="new-person-name" type="text"></div>

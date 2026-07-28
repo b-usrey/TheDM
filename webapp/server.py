@@ -38,7 +38,8 @@ from mapgen.settlements import Settlement, Tier
 from mapgen.worldmap import WorldMap, build_world
 from render.render_map import render_legend_to_png_bytes, render_to_png_bytes
 from webapp.dnd_api import register_dnd_routes
-from webapp.dynasty import Dynasty, generate_founder, generate_founding_house
+from webapp.dynasty import (Dynasty, generate_child, generate_founder, generate_founding_house,
+                             generate_spouse)
 from webapp.gm_tools import generate_encounter, generate_npc, travel_estimate
 from webapp.invites import InviteStore
 from webapp.shares import ShareStore
@@ -1727,6 +1728,32 @@ def api_delete_person(pid):
         state.push_undo()
         if not state.dynasty.delete_person(pid):
             return jsonify({"error": "no such person"}), 404
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/people/<pid>/generate-spouse", methods=["POST"])
+def api_generate_spouse(pid):
+    with state.lock:
+        person = state.dynasty.people.get(pid)
+        if not person:
+            return jsonify({"error": "no such person"}), 404
+        if person.spouse_id:
+            return jsonify({"error": "this person already has a spouse"}), 400
+        state.push_undo()
+        generate_spouse(state.dynasty, person)
+        state.save_dynasty()
+        return jsonify(state.dynasty.to_dict())
+
+
+@app.route("/api/dynasty/people/<pid>/generate-child", methods=["POST"])
+def api_generate_child(pid):
+    with state.lock:
+        person = state.dynasty.people.get(pid)
+        if not person:
+            return jsonify({"error": "no such person"}), 404
+        state.push_undo()
+        generate_child(state.dynasty, person)
         state.save_dynasty()
         return jsonify(state.dynasty.to_dict())
 

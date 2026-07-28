@@ -202,9 +202,16 @@ class Dynasty:
 
 def _random_names(rng):
     namer = NameGenerator(int(rng.integers(0, 2**31)))
-    given = namer.settlement_name(culture_idx=int(rng.integers(0, 3)), max_len=14)
+    given = namer.person_name(culture_idx=int(rng.integers(0, 3)))
     surname = namer.nation_name(culture_idx=int(rng.integers(0, 3)), max_len=14)
     return given, surname
+
+
+def _surname_of(name):
+    """Everything after the first space -- used to keep a generated
+    relative's surname matching the person they're related to, the same
+    way generate_founder matches a founder's surname to their house."""
+    return name.split(" ", 1)[1] if " " in name else name
 
 
 def generate_founder(dynasty, house, year=None):
@@ -232,3 +239,39 @@ def generate_founding_house(dynasty, nation_id, nation_name, year=None):
                                   notes=f"Ruling house of {nation_name}." if nation_name else "")
     generate_founder(dynasty, house, year=year)
     return house
+
+
+def generate_spouse(dynasty, person, year=None):
+    """Add a spouse for an already-existing (unmarried) Person and record
+    the marriage in one step -- the tree-click equivalent of generate_founder,
+    for filling out a house without a form per relative."""
+    if person.spouse_id:
+        raise ValueError("this person already has a spouse")
+    rng = np.random.default_rng()
+    given, random_surname = _random_names(rng)
+    surname = _surname_of(person.name) or random_surname
+    base_year = person.birth_year if person.birth_year is not None else dynasty.current_year - 30
+    spouse_birth = base_year + int(rng.integers(-6, 7))
+    spouse = dynasty.add_person(name=f"{given} {surname}", birth_year=spouse_birth, house_id=person.house_id)
+    marriage_year = year if year is not None else max(base_year, spouse_birth) + int(rng.integers(18, 26))
+    dynasty.record_marriage(person.uid, spouse.uid, marriage_year)
+    return spouse
+
+
+def generate_child(dynasty, person, year=None):
+    """Add a child for an already-existing Person (and their spouse, if any)
+    and record the birth in one step. father_id/mother_id here are just the
+    two parent slots the rest of the app already treats generically (see
+    record_birth) -- not an assumption about either parent's sex."""
+    rng = np.random.default_rng()
+    spouse = dynasty.people.get(person.spouse_id) if person.spouse_id else None
+    given, random_surname = _random_names(rng)
+    surname = _surname_of(person.name) or random_surname
+    parent_birth = max(
+        person.birth_year if person.birth_year is not None else dynasty.current_year - 30,
+        spouse.birth_year if spouse and spouse.birth_year is not None else 0,
+    )
+    child_year = year if year is not None else parent_birth + int(rng.integers(20, 35))
+    return dynasty.record_birth(name=f"{given} {surname}", year=child_year,
+                                 father_id=person.uid, mother_id=spouse.uid if spouse else None,
+                                 house_id=person.house_id)
