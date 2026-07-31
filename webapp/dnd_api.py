@@ -36,6 +36,7 @@ from data.features.base import Feature
 from data.features.homebrew import validate_homebrew_class
 from data.monsters.monsters import MONSTER_REGISTRY
 from utils.creatureFactory import CreatureFactory
+from utils.encounter_builder import build_encounter
 from utils.scenarioLoader import ScenarioLoader, build_map, place_creatures
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -350,6 +351,39 @@ def register_dnd_routes(app, user_dir):
         if key not in MONSTER_REGISTRY:
             return _detail_error(f"Monster '{name}' not found.", 404)
         return jsonify(MONSTER_REGISTRY[key])
+
+    # ---- Encounter generation -------------------------------------------
+
+    @app.route("/api/dnd/encounter", methods=["POST"])
+    def api_dnd_generate_encounter():
+        """Randomly build a combat-balanced encounter for a party at a
+        target difficulty, using the official 5e DMG XP-budget math (see
+        utils.encounter_builder.build_encounter in the dndpython
+        submodule). Response's "monsters" list is shaped exactly like a
+        scenario JSON's "monsters" entry, so the frontend can drop it
+        straight into the existing scenario save/simulate flow."""
+        body = request.get_json(silent=True) or {}
+        raw_levels = body.get("party_levels")
+        difficulty = body.get("difficulty", "medium")
+
+        if not isinstance(raw_levels, list) or not raw_levels:
+            return _detail_error("'party_levels' must be a non-empty list of character levels.", 422)
+        try:
+            party_levels = [int(lvl) for lvl in raw_levels]
+        except (TypeError, ValueError):
+            return _detail_error("'party_levels' must all be integers.", 422)
+
+        kwargs = {}
+        for key in ("max_monsters", "max_distinct_types"):
+            if key in body:
+                kwargs[key] = body[key]
+
+        try:
+            result = build_encounter(party_levels, difficulty=difficulty, **kwargs)
+        except (ValueError, KeyError, TypeError) as exc:
+            return _detail_error(str(exc), 422)
+
+        return jsonify(result)
 
     # ---- Scenarios (bundled samples + per-user saved) ------------------
 
