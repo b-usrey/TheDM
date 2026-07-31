@@ -33,6 +33,7 @@ from core.combat_manager import CombatManager
 from core.events import EventBus
 from core.InitiativeManager import InitiativeManager
 from data.features.base import Feature
+from data.features.homebrew import validate_homebrew_class
 from data.monsters.monsters import MONSTER_REGISTRY
 from utils.creatureFactory import CreatureFactory
 from utils.scenarioLoader import ScenarioLoader, build_map, place_creatures
@@ -151,37 +152,132 @@ def register_dnd_routes(app, user_dir):
             return bundled_path
         return None
 
+    def _user_classes_dir(username):
+        path = os.path.join(user_dir(username), "dnd_classes")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _class_filename(name):
+        return f"{os.path.basename((name or '').strip().lower())}.json"
+
+    def _find_class_path(username, name):
+        """User-saved (homebrew) classes shadow bundled ones of the same name."""
+        safe_name = _class_filename(name)
+        user_path = os.path.join(_user_classes_dir(username), safe_name)
+        if os.path.exists(user_path):
+            return user_path
+        bundled_path = os.path.join(CLASSES_DIR, safe_name)
+        if os.path.exists(bundled_path):
+            return bundled_path
+        return None
+
     # ---- Reference data -----------------------------------------------
+
+    def _class_summary(data, homebrew):
+        return {
+            "name": data["class_name"],
+            "hit_die": data["hit_die"],
+            "saving_throws": data.get("saving_throws", []),
+            "armor_profs": data.get("armor_proficiencies", []),
+            "weapon_profs": data.get("weapon_proficiencies", []),
+            "subclasses": list(data.get("subclasses", {}).keys()),
+            "features_by_level": {
+                lvl: [f["name"] for f in feats]
+                for lvl, feats in data.get("features_by_level", {}).items()
+            },
+            "homebrew": homebrew,
+        }
 
     @app.route("/api/dnd/classes")
     def api_dnd_list_classes():
+        username = session["username"]
         results = []
-        for name in sorted(os.listdir(CLASSES_DIR)):
+        seen = set()
+
+        # User's own (potentially homebrew) classes shadow bundled ones
+        # of the same name.
+        user_dir_path = _user_classes_dir(username)
+        for name in sorted(os.listdir(user_dir_path)):
             if not name.endswith(".json"):
+                continue
+            with open(os.path.join(user_dir_path, name), encoding="utf-8") as f:
+                data = json.load(f)
+            results.append(_class_summary(data, homebrew=True))
+            seen.add(name)
+
+        for name in sorted(os.listdir(CLASSES_DIR)):
+            if not name.endswith(".json") or name in seen:
                 continue
             with open(os.path.join(CLASSES_DIR, name), encoding="utf-8") as f:
                 data = json.load(f)
-            results.append({
-                "name": data["class_name"],
-                "hit_die": data["hit_die"],
-                "saving_throws": data.get("saving_throws", []),
-                "armor_profs": data.get("armor_proficiencies", []),
-                "weapon_profs": data.get("weapon_proficiencies", []),
-                "subclasses": list(data.get("subclasses", {}).keys()),
-                "features_by_level": {
-                    lvl: [f["name"] for f in feats]
-                    for lvl, feats in data.get("features_by_level", {}).items()
-                },
-            })
+            results.append(_class_summary(data, homebrew=False))
+
         return jsonify({"classes": results})
 
     @app.route("/api/dnd/classes/<name>")
     def api_dnd_get_class(name):
-        path = os.path.join(CLASSES_DIR, f"{name.lower()}.json")
-        if not os.path.exists(path):
+        username = session["username"]
+        path = _find_class_path(username, name)
+        if not path:
             return _detail_error(f"Class '{name}' not found.", 404)
         with open(path, encoding="utf-8") as f:
             return jsonify(json.load(f))
+
+    @app.route("/api/dnd/classes", methods=["POST"])
+    def api_dnd_save_class():
+        """Save a homebrew class. Every feature entry is either a name that
+        must already exist in Feature.REGISTRY, or an inline "homebrew"
+        block interpreted by data.features.homebrew.HomebrewFeature at
+        runtime -- no code from the upload is ever executed."""
+        username = session["username"]
+        body = request.get_json(silent=True) or {}
+        class_data = body.get("class")
+        overwrite = bool(body.get("overwrite", False))
+
+        if not isinstance(class_data, dict):
+            return _detail_error("Request body must contain a 'class' object.", 422)
+        class_name = class_data.get("class_name")
+        if not isinstance(class_name, str) or not class_name.strip():
+            return _detail_error("Class must have a non-empty 'class_name'.", 422)
+
+        errors = validate_homebrew_class(class_data)
+        if errors:
+            return _detail_error("Invalid homebrew class: " + "; ".join(errors), 422)
+
+        safe_name = _class_filename(class_name)
+        user_dir_path = _user_classes_dir(username)
+        out_path = os.path.join(user_dir_path, safe_name)
+        if os.path.exists(out_path) and not overwrite:
+            return _detail_error(
+                f"You already have a class named '{class_name}'. Set overwrite=true to replace it.", 409
+            )
+        if os.path.exists(os.path.join(CLASSES_DIR, safe_name)) and not overwrite:
+            return _detail_error(
+                f"'{class_name}' is a built-in class name. Set overwrite=true to save your own "
+                f"version under that name (only for your account -- the built-in class is untouched).",
+                409,
+            )
+
+        # Write to a temp path first so a bad write never leaves a
+        # half-written file behind, matching the world-upload pattern in
+        # server.py.
+        tmp_path = out_path + ".upload_tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(class_data, f, indent=2)
+        os.replace(tmp_path, out_path)
+        return jsonify({"saved": True, "name": class_name, "filename": safe_name})
+
+    @app.route("/api/dnd/classes/<name>", methods=["DELETE"])
+    def api_dnd_delete_class(name):
+        """Only ever deletes from the current user's own directory -- a
+        bundled class can never be removed this way, even if it's shadowed."""
+        username = session["username"]
+        safe_name = _class_filename(name)
+        path = os.path.join(_user_classes_dir(username), safe_name)
+        if not os.path.exists(path):
+            return _detail_error(f"'{name}' not found in your custom classes.", 404)
+        os.remove(path)
+        return jsonify({"deleted": True, "name": name})
 
     @app.route("/api/dnd/items")
     def api_dnd_list_items():
