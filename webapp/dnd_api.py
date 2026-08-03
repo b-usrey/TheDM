@@ -36,7 +36,7 @@ from data.features.base import Feature
 from data.features.homebrew import validate_homebrew_class
 from data.monsters.monsters import MONSTER_REGISTRY
 from utils.creatureFactory import CreatureFactory
-from utils.encounter_builder import build_encounter
+from utils.encounter_builder import build_encounter, score_encounter
 from utils.scenarioLoader import ScenarioLoader, build_map, place_creatures
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -131,6 +131,16 @@ def _run_episode(scenario_data, silent=True, strategy=None):
         "creatures": summaries,
         "log": log,
     }
+
+
+def _party_levels_from_scenario(scenario_data):
+    """Total character level per player (summed across multiclass levels),
+    for score_encounter's DMG XP-budget math."""
+    levels = []
+    for p in scenario_data.get("players", []):
+        classes = p.get("classes", [])
+        levels.append(sum(lvl for _, lvl in classes) if classes else 1)
+    return levels
 
 
 def register_dnd_routes(app, user_dir):
@@ -511,14 +521,44 @@ def register_dnd_routes(app, user_dir):
 
         wins = {"blue": 0, "red": 0, "none": 0}
         total_rounds = 0
+        rounds_seen = []
+        tpk_count = 0
+        any_down_count = 0
+        win_hp_pcts = []
+        pc_death_counts = {}
         last = {}
         try:
             for _ in range(n):
                 last = _run_episode(scenario_data, silent=silent, strategy=strategy)
-                wins[last["winner"] or "none"] += 1
+                winner = last["winner"] or "none"
+                wins[winner] += 1
                 total_rounds += last["rounds"]
+                rounds_seen.append(last["rounds"])
+
+                blue = [c for c in last["creatures"] if c["team"] == "blue"]
+                blue_alive = [c for c in blue if c["alive"]]
+                if blue and not blue_alive:
+                    tpk_count += 1
+                if len(blue_alive) < len(blue):
+                    any_down_count += 1
+                for c in blue:
+                    pc_death_counts.setdefault(c["name"], 0)
+                    if not c["alive"]:
+                        pc_death_counts[c["name"]] += 1
+                if winner == "blue":
+                    total_max = sum(c["max_hp"] for c in blue)
+                    if total_max > 0:
+                        win_hp_pcts.append(sum(c["hp"] for c in blue) / total_max)
         except Exception as exc:
             return _detail_error(str(exc), 500)
+
+        try:
+            difficulty = score_encounter(
+                _party_levels_from_scenario(scenario_data),
+                scenario_data.get("monsters", []),
+            )
+        except (ValueError, KeyError):
+            difficulty = None
 
         return jsonify({
             "episodes_run": n,
@@ -528,6 +568,16 @@ def register_dnd_routes(app, user_dir):
             "sample_outcome": last.get("outcome", ""),
             "creatures": last.get("creatures", []),
             "log": last.get("log", ""),
+            "aggregate": {
+                "tpk_rate":               tpk_count / n if n else 0.0,
+                "any_pc_down_rate":       any_down_count / n if n else 0.0,
+                "avg_party_hp_pct_on_win": (sum(win_hp_pcts) / len(win_hp_pcts)
+                                            if win_hp_pcts else None),
+                "rounds_min":             min(rounds_seen) if rounds_seen else 0,
+                "rounds_max":             max(rounds_seen) if rounds_seen else 0,
+                "per_pc_death_rate":      {name: count / n for name, count in pc_death_counts.items()},
+            },
+            "difficulty": difficulty,
         })
 
     # ---- Adapted frontend pages -----------------------------------------

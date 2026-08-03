@@ -174,7 +174,7 @@
     /* ── Stats row ──────────────────────────────────────────────────── */
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
       gap: 1rem;
       margin-bottom: 1.5rem;
     }
@@ -186,6 +186,9 @@
       padding: 1rem;
       text-align: center;
     }
+
+    .stat-card.warn { border-top-color: #c08a3e; }
+    .stat-card.danger { border-top-color: var(--crimson); }
 
     .stat-label {
       display: block;
@@ -203,6 +206,13 @@
       color: var(--gold);
     }
 
+    .stat-subvalue {
+      display: block;
+      font-size: 0.72rem;
+      color: rgba(232,224,208,0.45);
+      margin-top: 0.2rem;
+    }
+
     /* ── Outcome ────────────────────────────────────────────────────── */
     .outcome-text {
       font-style: italic;
@@ -212,6 +222,85 @@
       background: #1c1a17;
       border-left: 2px solid var(--gold-dim);
       font-size: 1rem;
+    }
+
+    /* ── Difficulty panel ───────────────────────────────────────────── */
+    .difficulty-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 520px) {
+      .difficulty-panel { grid-template-columns: 1fr; }
+    }
+
+    .difficulty-card {
+      background: #1c1a17;
+      border: 1px solid #4a3728;
+      padding: 1rem 1.25rem;
+    }
+
+    .difficulty-source {
+      font-size: 0.68rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      margin-bottom: 0.5rem;
+    }
+
+    .difficulty-badge {
+      display: inline-block;
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.7rem;
+      border-radius: 3px;
+    }
+
+    .band-trivial, .band-easy    { background: #2e4a33; color: #a9d6ab; }
+    .band-medium, .band-moderate { background: #4a3f1f; color: #e8d38a; }
+    .band-hard                   { background: #4a341f; color: #e8ab6a; }
+    .band-deadly                 { background: #4a2323; color: #e88a8a; }
+
+    .difficulty-detail {
+      font-size: 0.8rem;
+      color: rgba(232,224,208,0.55);
+      margin-top: 0.5rem;
+    }
+
+    /* ── Per-character death rate ──────────────────────────────────── */
+    .pc-death-list { margin-bottom: 1.5rem; }
+
+    .pc-death-row {
+      display: grid;
+      grid-template-columns: 110px 1fr 3.5rem;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+    }
+
+    .pc-death-name { color: rgba(232,224,208,0.8); }
+
+    .pc-death-track {
+      background: #1c1a17;
+      border: 1px solid #4a3728;
+      height: 10px;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .pc-death-fill {
+      height: 100%;
+      background: var(--crimson);
+    }
+
+    .pc-death-pct {
+      text-align: right;
+      color: rgba(232,224,208,0.6);
+      font-size: 0.78rem;
     }
 
     /* ── Creature table ─────────────────────────────────────────────── */
@@ -301,8 +390,8 @@
 
         <div class="field">
           <label for="episodes-input">Episodes</label>
-          <input id="episodes-input" type="number" min="1" max="100" value="10" />
-          <span class="field-hint">How many fights to simulate (max 100).</span>
+          <input id="episodes-input" type="number" min="1" max="50" value="20" />
+          <span class="field-hint">How many fights to simulate (max 50). More episodes give a steadier read on death/TPK rates.</span>
         </div>
 
         <button class="run-btn" id="run-btn" onclick="runSim()">Roll Initiative</button>
@@ -319,14 +408,42 @@
 
         <div id="sim-results" class="hidden">
 
+          <p id="res-verdict" class="outcome-text"></p>
+
+          <div class="difficulty-panel">
+            <div class="difficulty-card">
+              <div class="difficulty-source">Book Difficulty (DMG XP budget)</div>
+              <span class="difficulty-badge" id="res-dmg-band">—</span>
+              <div class="difficulty-detail" id="res-dmg-detail"></div>
+            </div>
+            <div class="difficulty-card">
+              <div class="difficulty-source">Simulated Difficulty</div>
+              <span class="difficulty-badge" id="res-sim-band">—</span>
+              <div class="difficulty-detail" id="res-sim-detail"></div>
+            </div>
+          </div>
+
           <div class="stats-row">
             <div class="stat-card">
               <span class="stat-label">Blue Win Rate</span>
               <span class="stat-value" id="res-winrate">—</span>
             </div>
+            <div class="stat-card" id="res-tpk-card">
+              <span class="stat-label">TPK Rate</span>
+              <span class="stat-value" id="res-tpk">—</span>
+            </div>
+            <div class="stat-card" id="res-anydown-card">
+              <span class="stat-label">Any PC Down</span>
+              <span class="stat-value" id="res-anydown">—</span>
+            </div>
             <div class="stat-card">
-              <span class="stat-label">Avg Rounds</span>
+              <span class="stat-label">Party HP on Win</span>
+              <span class="stat-value" id="res-hponwin">—</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Rounds</span>
               <span class="stat-value" id="res-rounds">—</span>
+              <span class="stat-subvalue" id="res-rounds-range"></span>
             </div>
             <div class="stat-card">
               <span class="stat-label">Episodes Run</span>
@@ -336,6 +453,8 @@
 
           <p id="res-outcome" class="outcome-text"></p>
 
+          <div class="pc-death-list" id="pc-death-list"></div>
+
           <table class="creature-table">
             <thead>
               <tr><th>Name</th><th>Team</th><th>HP</th><th>Status</th></tr>
@@ -344,7 +463,7 @@
           </table>
 
           <details class="log-details">
-            <summary>Combat Log (last episode)</summary>
+            <summary>Combat Log (sample episode)</summary>
             <pre id="res-log"></pre>
           </details>
 
@@ -374,10 +493,31 @@
       }
     }
 
+    const BAND_LABEL = { trivial: "Trivial", easy: "Easy", medium: "Moderate", hard: "Hard", deadly: "Deadly" };
+
+    function bandClass(band) {
+      return `band-${band === "medium" ? "moderate" : band}`;
+    }
+
+    // Simulated difficulty verdict from actual outcomes, independent of
+    // the DMG's XP-budget prediction -- these can and often do disagree,
+    // which is the whole point of showing both side by side.
+    function simulatedBand(winRate, tpkRate) {
+      if (tpkRate >= 0.15 || winRate < 0.40) return "deadly";
+      if (winRate < 0.65)                    return "hard";
+      if (winRate < 0.85)                    return "medium";
+      if (tpkRate === 0 && winRate >= 0.95)  return "trivial";
+      return "easy";
+    }
+
+    function pct(x, digits = 1) {
+      return x === null || x === undefined ? "—" : `${(x * 100).toFixed(digits)}%`;
+    }
+
     async function runSim() {
       const btn          = document.getElementById("run-btn");
       const scenarioName = document.getElementById("scenario-select").value;
-      const episodes     = Math.min(parseInt(document.getElementById("episodes-input").value) || 1, 100);
+      const episodes     = Math.min(parseInt(document.getElementById("episodes-input").value) || 1, 50);
       const errEl        = document.getElementById("sim-error");
       const resultsEl    = document.getElementById("sim-results");
       const placeholder  = document.getElementById("results-placeholder");
@@ -403,11 +543,70 @@
           throw new Error(err.detail || res.statusText);
         }
         const data = await res.json();
+        const agg  = data.aggregate || {};
+        const diff = data.difficulty;
 
-        document.getElementById("res-winrate").textContent  = `${(data.win_rate * 100).toFixed(1)}%`;
+        // ── Difficulty panel: book prediction vs simulated outcome ──────
+        if (diff) {
+          const dmgBand = diff.difficulty_achieved;
+          document.getElementById("res-dmg-band").textContent = BAND_LABEL[dmgBand] || dmgBand;
+          document.getElementById("res-dmg-band").className   = `difficulty-badge ${bandClass(dmgBand)}`;
+          document.getElementById("res-dmg-detail").textContent =
+            `${Math.round(diff.adjusted_xp)} adjusted XP vs ${diff.party_xp_thresholds.medium} (medium) / `
+            + `${diff.party_xp_thresholds.deadly} (deadly) threshold`;
+        } else {
+          document.getElementById("res-dmg-band").textContent = "—";
+          document.getElementById("res-dmg-band").className   = "difficulty-badge";
+          document.getElementById("res-dmg-detail").textContent = "Could not score this scenario.";
+        }
+
+        const simBand = simulatedBand(data.win_rate, agg.tpk_rate || 0);
+        document.getElementById("res-sim-band").textContent = BAND_LABEL[simBand];
+        document.getElementById("res-sim-band").className   = `difficulty-badge ${bandClass(simBand)}`;
+        document.getElementById("res-sim-detail").textContent =
+          `${pct(data.win_rate)} party win rate over ${data.episodes_run} fight(s)`;
+
+        // ── Stat cards ───────────────────────────────────────────────────
+        document.getElementById("res-winrate").textContent  = pct(data.win_rate);
+        document.getElementById("res-tpk").textContent      = pct(agg.tpk_rate);
+        document.getElementById("res-anydown").textContent  = pct(agg.any_pc_down_rate);
+        document.getElementById("res-hponwin").textContent  = pct(agg.avg_party_hp_pct_on_win);
         document.getElementById("res-rounds").textContent   = data.avg_rounds.toFixed(1);
+        document.getElementById("res-rounds-range").textContent =
+          (agg.rounds_min !== undefined) ? `range ${agg.rounds_min}–${agg.rounds_max}` : "";
         document.getElementById("res-episodes").textContent = data.episodes_run;
-        document.getElementById("res-outcome").textContent  = data.sample_outcome;
+
+        document.getElementById("res-tpk-card").className =
+          `stat-card${(agg.tpk_rate || 0) > 0 ? " danger" : ""}`;
+        document.getElementById("res-anydown-card").className =
+          `stat-card${(agg.any_pc_down_rate || 0) > 0.3 ? " warn" : ""}`;
+
+        // ── One-line plain-language verdict ─────────────────────────────
+        let verdict = `Across ${data.episodes_run} simulated fight(s), the party won ${pct(data.win_rate, 0)}.`;
+        if ((agg.tpk_rate || 0) > 0) {
+          verdict += ` ${pct(agg.tpk_rate, 0)} ended in a total party kill.`;
+        } else if ((agg.any_pc_down_rate || 0) > 0) {
+          verdict += ` ${pct(agg.any_pc_down_rate, 0)} left at least one character unconscious.`;
+        } else {
+          verdict += ` No character went down in any run.`;
+        }
+        document.getElementById("res-verdict").textContent = verdict;
+
+        // ── Per-character death rate ─────────────────────────────────────
+        const deathRates = Object.entries(agg.per_pc_death_rate || {});
+        document.getElementById("pc-death-list").innerHTML = deathRates.length
+          ? `<p class="panel-title" style="border:none;margin-bottom:0.75rem;">Death Rate by Character</p>`
+            + deathRates.map(([name, rate]) => `
+                <div class="pc-death-row">
+                  <span class="pc-death-name">${name}</span>
+                  <span class="pc-death-track"><span class="pc-death-fill" style="width:${(rate * 100).toFixed(0)}%"></span></span>
+                  <span class="pc-death-pct">${pct(rate, 0)}</span>
+                </div>
+              `).join("")
+          : "";
+
+        // ── Sample-episode snapshot ───────────────────────────────────────
+        document.getElementById("res-outcome").textContent = data.sample_outcome;
 
         document.getElementById("res-creatures").innerHTML = data.creatures.map(c => `
           <tr class="${c.alive ? "" : "dead"}">
