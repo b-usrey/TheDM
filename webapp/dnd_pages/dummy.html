@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dummy Tester — DnDPython</title>
+  <style>
+    :root {
+      --ink: #1c1a17; --parchment: #e8e0d0; --gold: #e8e0d0; --gold-dim: #b0a48f;
+      --crimson: #7a3030; --steel-dark: #1c1a17;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--steel-dark); color: var(--parchment);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 16px; line-height: 1.6; min-height: 100vh;
+    }
+    .page { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+    .sim-header {
+      display: flex; align-items: center; gap: 2rem; padding: 2rem 0 1.5rem;
+      border-bottom: 1px solid #4a3728; margin-bottom: 2rem; flex-wrap: wrap;
+    }
+    .back-link { font-size: 0.75rem; letter-spacing: 0.05em; color: var(--gold-dim); text-decoration: none; white-space: nowrap; }
+    .back-link:hover { color: var(--gold); }
+    .sim-title { font-size: clamp(1.3rem, 4vw, 1.8rem); color: var(--gold); }
+
+    .layout { display: grid; grid-template-columns: 300px 1fr; gap: 1.5rem; align-items: start; }
+    @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } }
+
+    .panel { background: #241f1a; border: 1px solid #4a3728; border-radius: 6px; padding: 1.75rem; }
+    .panel-title {
+      font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--gold-dim);
+      margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid #4a3728;
+    }
+    .field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.1rem; }
+    .field label { font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--gold-dim); }
+    .field select, .field input[type="number"] {
+      background: #1c1a17; border: 1px solid #4a3728; border-radius: 4px;
+      color: var(--parchment); font-family: inherit; font-size: 1rem; padding: 0.55rem 0.75rem;
+      outline: none; width: 100%;
+    }
+    .field-hint { font-size: 0.8rem; font-style: italic; color: rgba(232,224,208,0.45); }
+
+    .run-btn {
+      font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase;
+      padding: 0.9rem 2rem; border-radius: 4px; border: 1px solid #4a3728;
+      background: #3a3228; color: var(--parchment); cursor: pointer; width: 100%; margin-top: 0.5rem;
+    }
+    .run-btn:hover:not(:disabled) { background: #4a3f30; }
+    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .error-msg { color: #ff8a80; font-style: italic; font-size: 0.9rem; margin-top: 0.75rem; }
+
+    .results-placeholder {
+      display: flex; align-items: center; justify-content: center; min-height: 200px;
+      color: rgba(232,224,208,0.3); font-style: italic; border: 1px dashed #4a3728;
+    }
+
+    .tier-card {
+      background: #1c1a17; border: 1px solid #4a3728; border-top: 2px solid var(--gold-dim);
+      padding: 1.1rem; margin-bottom: 1rem;
+    }
+    .tier-title { font-size: 0.95rem; font-weight: 600; color: var(--gold); margin-bottom: 0.75rem; }
+    .tier-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
+    .tier-stat { text-align: center; }
+    .tier-stat-label { display: block; font-size: 0.62rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--gold-dim); }
+    .tier-stat-value { display: block; font-size: 1.15rem; font-weight: 600; color: var(--gold); }
+
+    .compare-bars { display: flex; align-items: flex-end; gap: 1.2rem; height: 140px; padding-top: 1rem; margin-bottom: 0.5rem; }
+    .compare-bar-wrap { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; gap: 0.35rem; }
+    .compare-bar { width: 60%; max-width: 50px; background: var(--gold-dim); border-radius: 3px 3px 0 0; min-height: 2px; }
+    .compare-bar-value { font-size: 0.75rem; color: rgba(232,224,208,0.75); }
+    .compare-bar-label { font-size: 0.68rem; color: rgba(232,224,208,0.5); }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <div class="page">
+    <header class="sim-header">
+      <nav style="display:flex;gap:1.1rem;flex-wrap:wrap;align-items:center;">
+        <a class="back-link" href="/dnd">← Home</a>
+        <a class="back-link" href="/dnd/builder">Builder</a>
+        <a class="back-link" href="/dnd/simulator">Simulator</a>
+        <a class="back-link" href="/dnd/analyzer">Position Analyzer</a>
+        <a class="back-link" href="/dnd/dummy">Dummy Tester</a>
+        <a class="back-link" href="/dnd/scenarios">Scenarios</a>
+        <a class="back-link" href="/dnd/monsters">Monsters</a>
+        <a class="back-link" href="/dnd/classes">Classes</a>
+        <a class="back-link" href="/app" style="margin-left:1.5rem;">Map Generator →</a>
+      </nav>
+      <h1 class="sim-title">🎯 Dummy Tester</h1>
+    </header>
+
+    <div class="layout">
+
+      <aside class="panel">
+        <p class="panel-title">Setup</p>
+
+        <div class="field">
+          <label for="scenario-select">Scenario</label>
+          <select id="scenario-select"><option value="">Loading…</option></select>
+        </div>
+
+        <div class="field">
+          <label for="player-select">Character</label>
+          <select id="player-select"><option value="">Pick a scenario first</option></select>
+        </div>
+
+        <div class="field">
+          <label for="rounds-input">Rounds</label>
+          <input id="rounds-input" type="number" min="3" max="15" value="8" />
+          <span class="field-hint">How many rounds of sustained attacks to simulate against each dummy.</span>
+        </div>
+
+        <div class="field">
+          <label for="episodes-input">Episodes</label>
+          <input id="episodes-input" type="number" min="1" max="50" value="20" />
+        </div>
+
+        <button class="run-btn" id="run-btn" onclick="runDummyTest()" disabled>Test Against Dummies</button>
+        <p id="err" class="error-msg hidden"></p>
+        <p class="field-hint" style="margin-top:0.75rem;">
+          Runs your character solo against four stationary, non-attacking targets at AC 12/15/18/21 --
+          isolates raw damage output from party composition and counter-damage.
+        </p>
+      </aside>
+
+      <section class="panel">
+        <p class="panel-title">Damage vs. Defense</p>
+        <div id="results-placeholder" class="results-placeholder">Pick a scenario and character to begin.</div>
+        <div id="results" class="hidden"></div>
+      </section>
+
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "/api/dnd";
+    const AC_TIERS = [
+      { key: "TRAINING_DUMMY_AC12", ac: 12 },
+      { key: "TRAINING_DUMMY_AC15", ac: 15 },
+      { key: "TRAINING_DUMMY_AC18", ac: 18 },
+      { key: "TRAINING_DUMMY_AC21", ac: 21 },
+    ];
+
+    let currentScenario = null;
+
+    async function loadScenarios() {
+      const sel = document.getElementById("scenario-select");
+      try {
+        const res = await fetch(`${API_URL}/scenarios`);
+        const data = await res.json();
+        sel.innerHTML = data.scenarios.length
+          ? `<option value="">— Choose —</option>` + data.scenarios
+              .map(s => `<option value="${s}">${s.replace(".json", "").replace(/_/g, " ")}</option>`).join("")
+          : '<option value="">No scenarios found</option>';
+        sel.onchange = () => loadPlayers(sel.value);
+      } catch {
+        sel.innerHTML = '<option value="">Could not reach API</option>';
+      }
+    }
+
+    async function loadPlayers(name) {
+      const playerSel = document.getElementById("player-select");
+      const runBtn = document.getElementById("run-btn");
+      if (!name) {
+        currentScenario = null;
+        playerSel.innerHTML = '<option value="">Pick a scenario first</option>';
+        runBtn.disabled = true;
+        return;
+      }
+      try {
+        const res = await fetch(`${API_URL}/scenarios/${name}`);
+        currentScenario = await res.json();
+        const players = currentScenario.players || [];
+        playerSel.innerHTML = players.length
+          ? players.map(p => `<option value="${p.name}">${p.name}</option>`).join("")
+          : '<option value="">No characters in this scenario</option>';
+        runBtn.disabled = players.length === 0;
+      } catch (e) {
+        playerSel.innerHTML = '<option value="">Error loading scenario</option>';
+        runBtn.disabled = true;
+      }
+    }
+
+    function buildDummyScenario(player, dummyType, rounds) {
+      return {
+        name: `Dummy test — ${player.name} vs ${dummyType}`,
+        max_rounds: rounds,
+        map: { width: 12, height: 8, walls: [], difficult_terrain: [] },
+        positions: { [player.name]: [1, 3], monsters: [[5, 3]] },
+        players: [player],
+        monsters: [{ type: dummyType, count: 1 }],
+      };
+    }
+
+    function pct(x, digits = 1) {
+      return x === null || x === undefined ? "—" : `${(x * 100).toFixed(digits)}%`;
+    }
+
+    async function runDummyTest() {
+      const btn = document.getElementById("run-btn");
+      const errEl = document.getElementById("err");
+      errEl.classList.add("hidden");
+      const playerName = document.getElementById("player-select").value;
+      const player = (currentScenario.players || []).find(p => p.name === playerName);
+      if (!player) { errEl.textContent = "Pick a character first."; errEl.classList.remove("hidden"); return; }
+
+      const rounds = Math.max(3, Math.min(parseInt(document.getElementById("rounds-input").value) || 8, 15));
+      const episodes = Math.max(1, Math.min(parseInt(document.getElementById("episodes-input").value) || 20, 50));
+
+      btn.disabled = true;
+      btn.textContent = "Testing…";
+      document.getElementById("results-placeholder").classList.remove("hidden");
+      document.getElementById("results-placeholder").textContent = "Running against each dummy tier…";
+      document.getElementById("results").classList.add("hidden");
+
+      try {
+        const tierResults = [];
+        for (const tier of AC_TIERS) {
+          const scenario = buildDummyScenario(player, tier.key, rounds);
+          const res = await fetch(`${API_URL}/simulate`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenario, episodes, silent: true }),
+          });
+          if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
+          const data = await res.json();
+          const stats = (data.character_stats || {})[player.name] || { damage_by_round: {}, by_trigger: {} };
+          const totalDamage = Object.values(stats.damage_by_round).reduce((a, b) => a + b, 0);
+          const triggers = Object.values(stats.by_trigger);
+          const totalAttempts = triggers.reduce((a, t) => a + t.attempts, 0);
+          const totalHits = triggers.reduce((a, t) => a + t.hits, 0);
+          tierResults.push({
+            ac: tier.ac,
+            totalDamage,
+            dpr: rounds ? totalDamage / rounds : 0,
+            hitRate: totalAttempts ? totalHits / totalAttempts : 0,
+          });
+        }
+        renderResults(tierResults, rounds);
+      } catch (e) {
+        errEl.textContent = `Error: ${e.message}`;
+        errEl.classList.remove("hidden");
+        document.getElementById("results-placeholder").textContent = "Pick a scenario and character to begin.";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Test Against Dummies";
+      }
+    }
+
+    function renderResults(tierResults, rounds) {
+      document.getElementById("results-placeholder").classList.add("hidden");
+      const el = document.getElementById("results");
+      el.classList.remove("hidden");
+
+      const maxDamage = Math.max(...tierResults.map(t => t.totalDamage), 1);
+      const bars = tierResults.map(t => `
+        <div class="compare-bar-wrap">
+          <span class="compare-bar-value">${t.totalDamage.toFixed(0)}</span>
+          <div class="compare-bar" style="height:${Math.max(2, (t.totalDamage / maxDamage) * 100)}%"></div>
+          <span class="compare-bar-label">AC ${t.ac}</span>
+        </div>`).join("");
+
+      const cards = tierResults.map(t => `
+        <div class="tier-card">
+          <div class="tier-title">vs. AC ${t.ac}</div>
+          <div class="tier-stats-row">
+            <div class="tier-stat"><span class="tier-stat-label">Total Dmg (${rounds}r)</span><span class="tier-stat-value">${t.totalDamage.toFixed(0)}</span></div>
+            <div class="tier-stat"><span class="tier-stat-label">Avg Dmg/Round</span><span class="tier-stat-value">${t.dpr.toFixed(1)}</span></div>
+            <div class="tier-stat"><span class="tier-stat-label">Hit Rate</span><span class="tier-stat-value">${pct(t.hitRate, 0)}</span></div>
+          </div>
+        </div>`).join("");
+
+      el.innerHTML = `
+        <p style="font-size:0.85rem;color:rgba(232,224,208,0.6);margin-bottom:1rem;">
+          Total damage dealt over ${rounds} rounds, averaged across episodes, against each defense tier.
+        </p>
+        <div class="compare-bars">${bars}</div>
+        ${cards}
+      `;
+    }
+
+    document.addEventListener("DOMContentLoaded", loadScenarios);
+  </script>
+
+</body>
+</html>
