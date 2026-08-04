@@ -339,6 +339,47 @@ def _aggregate_character_stats(episodes_events, team="blue"):
     return result
 
 
+def _aggregate_resource_usage(episodes_events, team="blue"):
+    """
+    Tier-2 resource-timeline stats, built from CombatLogger's
+    "resource_spent" records (Ki, Rage, spell_slot_<N>, ...): for each
+    character+resource pair, how many times it's spent per episode on
+    average, what round the *last* spend of each episode happened (a
+    proxy for "when does this typically run dry"), and what fraction of
+    episodes it was used in at all.
+
+    Returns {character_name: {resource_name: {avg_spends_per_episode,
+    avg_round_of_last_spend, pct_episodes_used}}}.
+    """
+    n_episodes = len(episodes_events) or 1
+    per_key = {}   # (name, resource) -> {"spends": [...], "last_rounds": [...]}
+
+    for events in episodes_events:
+        last_round = {}    # (name, resource) -> round of most recent spend seen so far
+        spend_count = {}   # (name, resource) -> count this episode
+        for r in events:
+            if r.get("type") != "resource_spent" or r.get("team") != team:
+                continue
+            key = (r["creature"], r.get("resource", "unknown"))
+            spend_count[key] = spend_count.get(key, 0) + 1
+            last_round[key] = r.get("round", 1)
+        for key, count in spend_count.items():
+            bucket = per_key.setdefault(key, {"spends": [], "last_rounds": []})
+            bucket["spends"].append(count)
+            bucket["last_rounds"].append(last_round[key])
+
+    result = {}
+    for (name, resource), data in per_key.items():
+        result.setdefault(name, {})
+        result[name][resource] = {
+            "avg_spends_per_episode":  round(sum(data["spends"]) / n_episodes, 2),
+            "avg_round_of_last_spend": (round(sum(data["last_rounds"]) / len(data["last_rounds"]), 2)
+                                         if data["last_rounds"] else None),
+            "pct_episodes_used":       round(len(data["spends"]) / n_episodes, 3),
+        }
+    return result
+
+
 def register_dnd_routes(app, user_dir):
     """user_dir(username) -> path to that user's own storage directory,
     same helper server.py already uses for world files."""
@@ -783,6 +824,7 @@ def register_dnd_routes(app, user_dir):
             difficulty = None
 
         character_stats = _aggregate_character_stats(all_events, team="blue")
+        resource_usage = _aggregate_resource_usage(all_events, team="blue")
 
         return jsonify({
             "episodes_run": n,
@@ -794,6 +836,7 @@ def register_dnd_routes(app, user_dir):
             "log": last.get("log", ""),
             "sample_events": last.get("events", []),
             "character_stats": character_stats,
+            "resource_usage": resource_usage,
             "aggregate": {
                 "tpk_rate":               tpk_count / n if n else 0.0,
                 "any_pc_down_rate":       any_down_count / n if n else 0.0,

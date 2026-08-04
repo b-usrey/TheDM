@@ -679,7 +679,35 @@
         </table>`;
     }
 
-    function renderCharacterAnalyzer(characterStats) {
+    function resourceLabel(resource) {
+      if (resource.startsWith("spell_slot_")) return `Lv${resource.split("_")[2]} Spell Slot`;
+      return resource.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function renderResourceTable(resourceUsage, avgRounds) {
+      const rows = Object.entries(resourceUsage || {});
+      if (!rows.length) return '<p class="analyzer-empty">No tracked resources (Ki, Rage, spell slots) spent this run.</p>';
+      return `
+        <table class="mini-table">
+          <thead><tr>
+            <th>Resource</th><th class="num">Avg Uses/Fight</th>
+            <th class="num">Used In</th><th class="num">Last Use (Round)</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(([resource, s]) => `
+              <tr>
+                <td>${resourceLabel(resource)}</td>
+                <td class="num">${s.avg_spends_per_episode}</td>
+                <td class="num">${pct(s.pct_episodes_used, 0)}</td>
+                <td class="num">${s.avg_round_of_last_spend ?? "—"}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+        <p class="analyzer-empty">Fights averaged ${avgRounds.toFixed(1)} rounds. A resource whose
+        last-use round is well below that ran dry with rounds to spare.</p>`;
+    }
+
+    function renderCharacterAnalyzer(characterStats, resourceUsageByChar, avgRounds) {
       const names = Object.keys(characterStats || {});
       const el = document.getElementById("char-analyzer");
       if (!names.length) {
@@ -698,6 +726,8 @@
               ${renderTriggerTable(s.by_trigger)}
               <p class="char-subtitle">Tagged Feature Usage</p>
               ${renderTagTable(s.by_tag)}
+              <p class="char-subtitle">Resource Usage (Ki / Rage / Spell Slots)</p>
+              ${renderResourceTable((resourceUsageByChar || {})[name], avgRounds)}
             </div>
           </details>`;
       }).join("");
@@ -795,7 +825,7 @@
           : "";
 
         // ── Per-character analyzer ────────────────────────────────────────
-        renderCharacterAnalyzer(data.character_stats);
+        renderCharacterAnalyzer(data.character_stats, data.resource_usage, data.avg_rounds);
 
         // ── Sample-episode snapshot ───────────────────────────────────────
         document.getElementById("res-outcome").textContent = data.sample_outcome;
