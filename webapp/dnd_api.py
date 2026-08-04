@@ -35,6 +35,7 @@ from core.InitiativeManager import InitiativeManager
 from data.features.base import Feature
 from data.features.homebrew import validate_homebrew_class
 from data.monsters.monsters import MONSTER_REGISTRY
+from utils.combat_logger import CombatLogger
 from utils.creatureFactory import CreatureFactory
 from utils.encounter_builder import build_encounter, score_encounter
 from utils.scenarioLoader import ScenarioLoader, build_map, place_creatures
@@ -101,7 +102,9 @@ def _run_episode(scenario_data, silent=True, strategy=None):
                 cm.ai.current_strategy = StrategyEnum[strategy.upper()]
             except KeyError:
                 pass
+        logger = CombatLogger(event, initiative)   # in-memory only, no file path
         outcome = cm.run()
+        logger.close()
 
     log = captured.getvalue()
     outcome_lower = outcome.lower()
@@ -130,6 +133,7 @@ def _run_episode(scenario_data, silent=True, strategy=None):
         "rounds": cm.initiative.round,
         "creatures": summaries,
         "log": log,
+        "events": logger.records,
     }
 
 
@@ -141,6 +145,115 @@ def _party_levels_from_scenario(scenario_data):
         classes = p.get("classes", [])
         levels.append(sum(lvl for _, lvl in classes) if classes else 1)
     return levels
+
+
+# Tags that duplicate the "trigger" field's own semantics (see CombatLogger's
+# attack-record schema) -- excluded from by_tag so e.g. "Extra Attack" isn't
+# reported twice, once correctly under by_trigger and once as a meaningless
+# "feature usage" entry under by_tag.
+_TRIGGER_TAGS = {"bonus_action", "extra_attack"}
+
+
+def _aggregate_character_stats(episodes_events, team="blue"):
+    """
+    Tier-1 character-analyzer stats, built from CombatLogger's structured
+    event records across all simulated episodes (not just the last one).
+
+    Args:
+        episodes_events: list of per-episode event-record lists (each
+            episode's "events" list from _run_episode).
+        team: which team's characters to report on.
+
+    Returns {character_name: {damage_by_round, by_trigger, by_tag}}.
+    damage_by_round includes both "attack" records (weapon/spell-attack-
+    roll damage) and "save_damage" records (Fireball/Thunderwave/etc.) --
+    without the latter, a save-based caster's damage would be invisible.
+    by_trigger/by_tag cover attack records only (save-based spells have no
+    such per-attack concepts).
+    """
+    n_episodes = len(episodes_events) or 1
+    damage_by_round = {}   # name -> round -> total damage across all episodes
+    trigger_stats    = {}  # name -> trigger -> {attempts, hits, crits, damage}
+    tag_stats        = {}  # name -> tag -> {attempts, hits, damage}
+    names_seen = set()
+
+    def _bump_round_damage(name, rnd, dmg):
+        damage_by_round.setdefault(name, {})
+        damage_by_round[name][rnd] = damage_by_round[name].get(rnd, 0.0) + dmg
+
+    for events in episodes_events:
+        for r in events:
+            rtype = r.get("type")
+            if rtype not in ("attack", "save_damage"):
+                continue
+            if r.get("team") != team:
+                continue
+            name = r["creature"]
+            names_seen.add(name)
+            rnd = r.get("round", 1)
+
+            if rtype == "save_damage":
+                _bump_round_damage(name, rnd, r.get("damage", 0) or 0)
+                continue
+
+            # "attack" record
+            hit  = bool(r.get("hit"))
+            crit = bool(r.get("critical"))
+            dmg  = r.get("damage", 0) or 0
+            trig = r.get("trigger", "action")
+
+            if hit:
+                _bump_round_damage(name, rnd, dmg)
+
+            ts = trigger_stats.setdefault(name, {}).setdefault(
+                trig, {"attempts": 0, "hits": 0, "crits": 0, "damage": 0.0})
+            ts["attempts"] += 1
+            if hit:
+                ts["hits"] += 1
+                ts["damage"] += dmg
+            if crit:
+                ts["crits"] += 1
+
+            for tag in r.get("tags", []):
+                if tag in _TRIGGER_TAGS:
+                    continue
+                tg = tag_stats.setdefault(name, {}).setdefault(
+                    tag, {"attempts": 0, "hits": 0, "damage": 0.0})
+                tg["attempts"] += 1
+                if hit:
+                    tg["hits"] += 1
+                    tg["damage"] += dmg
+
+    result = {}
+    for name in names_seen:
+        rounds = damage_by_round.get(name, {})
+        result[name] = {
+            "damage_by_round": {
+                str(rnd): round(total / n_episodes, 2)
+                for rnd, total in sorted(rounds.items())
+            },
+            "by_trigger": {
+                trig: {
+                    "attempts":           s["attempts"],
+                    "hits":               s["hits"],
+                    "crits":              s["crits"],
+                    "hit_rate":           round(s["hits"] / s["attempts"], 3) if s["attempts"] else 0.0,
+                    "crit_rate":          round(s["crits"] / s["attempts"], 3) if s["attempts"] else 0.0,
+                    "avg_damage_per_hit": round(s["damage"] / s["hits"], 2) if s["hits"] else 0.0,
+                }
+                for trig, s in trigger_stats.get(name, {}).items()
+            },
+            "by_tag": {
+                tag: {
+                    "attempts":           s["attempts"],
+                    "hits":               s["hits"],
+                    "hit_rate":           round(s["hits"] / s["attempts"], 3) if s["attempts"] else 0.0,
+                    "avg_damage_per_hit": round(s["damage"] / s["hits"], 2) if s["hits"] else 0.0,
+                }
+                for tag, s in tag_stats.get(name, {}).items()
+            },
+        }
+    return result
 
 
 def register_dnd_routes(app, user_dir):
@@ -526,6 +639,7 @@ def register_dnd_routes(app, user_dir):
         any_down_count = 0
         win_hp_pcts = []
         pc_death_counts = {}
+        all_events = []
         last = {}
         try:
             for _ in range(n):
@@ -534,6 +648,7 @@ def register_dnd_routes(app, user_dir):
                 wins[winner] += 1
                 total_rounds += last["rounds"]
                 rounds_seen.append(last["rounds"])
+                all_events.append(last.get("events", []))
 
                 blue = [c for c in last["creatures"] if c["team"] == "blue"]
                 blue_alive = [c for c in blue if c["alive"]]
@@ -560,6 +675,8 @@ def register_dnd_routes(app, user_dir):
         except (ValueError, KeyError):
             difficulty = None
 
+        character_stats = _aggregate_character_stats(all_events, team="blue")
+
         return jsonify({
             "episodes_run": n,
             "wins": wins,
@@ -568,6 +685,8 @@ def register_dnd_routes(app, user_dir):
             "sample_outcome": last.get("outcome", ""),
             "creatures": last.get("creatures", []),
             "log": last.get("log", ""),
+            "sample_events": last.get("events", []),
+            "character_stats": character_stats,
             "aggregate": {
                 "tpk_rate":               tpk_count / n if n else 0.0,
                 "any_pc_down_rate":       any_down_count / n if n else 0.0,
