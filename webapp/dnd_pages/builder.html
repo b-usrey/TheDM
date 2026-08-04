@@ -240,6 +240,7 @@
 <nav>
   <a href="/dnd">Home</a>
   <a href="/dnd/builder">Builder</a>
+  <a href="/dnd/scenario-builder">Scenario Builder</a>
   <a href="/dnd/simulator">Simulator</a>
   <a href="/dnd/analyzer">Position Analyzer</a>
   <a href="/dnd/dummy">Dummy Tester</a>
@@ -429,6 +430,7 @@
         <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem">
           <button class="btn btn-sm" onclick="validateChar()">Validate Character</button>
           <button class="btn btn-sm btn-primary" onclick="runSim()">Open in Simulator</button>
+          <button class="btn btn-sm" onclick="addToScenarioDraft()">+ Add to Scenario Builder</button>
         </div>
       </div>
       <div id="apiStatus"></div>
@@ -1444,6 +1446,36 @@ async function runSim() {
     el.textContent = 'Saved -- opening in Simulator...'; el.className = 'ok';
     window.location.href = `/dnd/simulator?scenario=${encodeURIComponent(data.filename)}`;
   } catch(e) { el.textContent = 'Could not reach API. Is the server running?'; el.className='err'; }
+}
+
+const SCENARIO_DRAFT_KEY = 'dnd_scenario_draft';
+
+function addToScenarioDraft() {
+  const el = document.getElementById('apiStatus');
+  const player = buildPlayer();
+
+  let draft;
+  try {
+    draft = JSON.parse(localStorage.getItem(SCENARIO_DRAFT_KEY)) || null;
+  } catch { draft = null; }
+  if (!draft || typeof draft !== 'object') {
+    draft = {
+      name: 'My Encounter', max_rounds: 20,
+      map: { width: 16, height: 12, walls: [], difficult_terrain: [] },
+      players: [], monsters: [], positions: {},
+    };
+  }
+  draft.players = draft.players || [];
+
+  let finalName = player.name;
+  let n = 2;
+  while (draft.players.some(p => p.name === finalName)) { finalName = `${player.name} (${n++})`; }
+  player.name = finalName;
+  draft.players.push(player);
+
+  localStorage.setItem(SCENARIO_DRAFT_KEY, JSON.stringify(draft));
+  el.textContent = `Added "${finalName}" -- opening Scenario Builder...`; el.className = 'ok';
+  window.location.href = '/dnd/scenario-builder';
 }
 
 // ═══════════════════════════════════════════════════════════════

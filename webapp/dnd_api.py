@@ -851,7 +851,7 @@ def register_dnd_routes(app, user_dir):
 
     # ---- Adapted frontend pages -----------------------------------------
 
-    _PAGE_FILES = {"builder", "simulator", "analyzer", "dummy", "monsters", "scenarios", "classes"}
+    _PAGE_FILES = {"builder", "simulator", "analyzer", "dummy", "scenario-builder", "monsters", "scenarios", "classes"}
 
     @app.route("/dnd")
     def dnd_landing():

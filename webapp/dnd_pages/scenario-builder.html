@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scenario Builder — DnDPython</title>
+  <style>
+    :root {
+      --ink: #1c1a17; --parchment: #e8e0d0; --gold: #e8e0d0; --gold-dim: #b0a48f;
+      --crimson: #7a3030; --steel-dark: #1c1a17;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--steel-dark); color: var(--parchment);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 16px; line-height: 1.6; min-height: 100vh;
+    }
+    .page { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+    .sim-header {
+      display: flex; align-items: center; gap: 2rem; padding: 2rem 0 1.5rem;
+      border-bottom: 1px solid #4a3728; margin-bottom: 2rem; flex-wrap: wrap;
+    }
+    .back-link { font-size: 0.75rem; letter-spacing: 0.05em; color: var(--gold-dim); text-decoration: none; white-space: nowrap; }
+    .back-link:hover { color: var(--gold); }
+    .sim-title { font-size: clamp(1.3rem, 4vw, 1.8rem); color: var(--gold); }
+
+    .layout { display: grid; grid-template-columns: 290px 1fr 280px; gap: 1.5rem; align-items: start; }
+    @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+
+    .panel { background: #241f1a; border: 1px solid #4a3728; border-radius: 6px; padding: 1.5rem; }
+    .panel-title {
+      font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--gold-dim);
+      margin-bottom: 1.1rem; padding-bottom: 0.6rem; border-bottom: 1px solid #4a3728;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
+    .field label { font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--gold-dim); }
+    .field select, .field input[type="number"], .field input[type="text"] {
+      background: #1c1a17; border: 1px solid #4a3728; border-radius: 4px;
+      color: var(--parchment); font-family: inherit; font-size: 0.9rem;
+      padding: 0.5rem 0.65rem; outline: none; width: 100%;
+    }
+    .field-row { display: flex; gap: 0.5rem; }
+    .field-row .field { flex: 1; }
+    .field-hint { font-size: 0.76rem; font-style: italic; color: rgba(232,224,208,0.45); }
+
+    .btn {
+      font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 0.6rem 1rem; border-radius: 4px; border: 1px solid #4a3728;
+      background: #3a3228; color: var(--parchment); cursor: pointer; transition: background 0.2s;
+    }
+    .btn:hover:not(:disabled) { background: #4a3f30; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-block { width: 100%; margin-top: 0.4rem; }
+    .btn-secondary { background: transparent; }
+    .btn-tiny { font-size: 0.68rem; padding: 0.35rem 0.6rem; }
+    .btn-danger-tiny { background: none; border: none; color: #e87070; cursor: pointer; font-size: 0.85rem; padding: 0 0.3rem; }
+
+    .error-msg { color: #ff8a80; font-style: italic; font-size: 0.85rem; margin-top: 0.5rem; }
+
+    /* ── Roster lists (party / monsters) ──────────────────────────────── */
+    .roster-item {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.45rem 0; border-bottom: 1px solid #33291f; font-size: 0.85rem;
+    }
+    .roster-item.placed { color: rgba(232,224,208,0.95); }
+    .roster-item.unplaced { color: rgba(232,224,208,0.5); }
+    .roster-item-name { flex: 1; cursor: pointer; }
+    .roster-item.armed .roster-item-name { color: var(--gold); font-weight: 600; }
+    .roster-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .roster-dot.blue { background: #6ab0e8; } .roster-dot.red { background: #e87070; }
+
+    .monster-row {
+      display: grid; grid-template-columns: 1fr 46px 70px 20px;
+      gap: 0.3rem; align-items: center; margin-bottom: 0.4rem;
+    }
+    .monster-row select, .monster-row input {
+      background: #1c1a17; border: 1px solid #4a3728; border-radius: 3px;
+      color: var(--parchment); font-size: 0.78rem; padding: 0.3rem 0.35rem; width: 100%;
+    }
+
+    /* ── Grid / board ──────────────────────────────────────────────────── */
+    .paint-toolbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .paint-mode-btn.active { background: #4a3f30; border-color: var(--gold-dim); }
+
+    .board-wrap { overflow: auto; max-height: 640px; }
+    .board { display: grid; gap: 1px; background: #14120f; border: 1px solid #4a3728; width: fit-content; user-select: none; }
+    .cell {
+      width: 28px; height: 28px; background: #241f1a;
+      display: flex; align-items: center; justify-content: center;
+      position: relative; cursor: pointer; font-size: 0.55rem;
+    }
+    .cell.wall { background: #0f0d0b; }
+    .cell.difficult { background: #2e2a1a; }
+    .cell.armed-target { outline: 2px solid #6ab0e8; outline-offset: -2px; }
+
+    .token {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.58rem; font-weight: 700; color: #1c1a17; border: 2px solid transparent;
+    }
+    .token.blue { background: #6ab0e8; } .token.red { background: #e87070; }
+    .token.armed { border-color: var(--gold); box-shadow: 0 0 5px var(--gold); }
+
+    .placed-count { font-size: 0.78rem; color: rgba(232,224,208,0.55); margin-top: 0.5rem; }
+    .placed-count.complete { color: #9cd6a0; }
+
+    .import-box { background: #1c1a17; border: 1px solid #4a3728; padding: 0.85rem; margin-bottom: 1rem; }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <div class="page">
+    <header class="sim-header">
+      <nav style="display:flex;gap:1.1rem;flex-wrap:wrap;align-items:center;">
+        <a class="back-link" href="/dnd">← Home</a>
+        <a class="back-link" href="/dnd/builder">Builder</a>
+        <a class="back-link" href="/dnd/simulator">Simulator</a>
+        <a class="back-link" href="/dnd/analyzer">Position Analyzer</a>
+        <a class="back-link" href="/dnd/dummy">Dummy Tester</a>
+        <a class="back-link" href="/dnd/scenario-builder">Scenario Builder</a>
+        <a class="back-link" href="/dnd/scenarios">Scenarios</a>
+        <a class="back-link" href="/dnd/monsters">Monsters</a>
+        <a class="back-link" href="/dnd/classes">Classes</a>
+        <a class="back-link" href="/app" style="margin-left:1.5rem;">Map Generator →</a>
+      </nav>
+      <h1 class="sim-title">🗺️ Scenario Builder</h1>
+    </header>
+
+    <div class="layout">
+
+      <!-- ── Left: scenario settings + party ──────────────────────── -->
+      <aside class="panel">
+        <p class="panel-title">Scenario</p>
+        <div class="field">
+          <label for="scen-name">Name</label>
+          <input type="text" id="scen-name" placeholder="My Encounter" />
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="scen-w">Width</label><input type="number" id="scen-w" min="4" max="60" /></div>
+          <div class="field"><label for="scen-h">Height</label><input type="number" id="scen-h" min="4" max="60" /></div>
+        </div>
+        <div class="field">
+          <label for="scen-rounds">Max Rounds</label>
+          <input type="number" id="scen-rounds" min="1" max="100" />
+        </div>
+
+        <p class="panel-title" style="margin-top:1.5rem;">Party <span id="party-count"></span></p>
+        <div id="party-list"></div>
+        <a class="btn btn-block" href="/dnd/builder" style="display:block;text-align:center;text-decoration:none;">+ Create New Character</a>
+        <button class="btn btn-secondary btn-block" onclick="toggleImportBox()">+ Import Existing Character</button>
+        <div class="import-box hidden" id="import-box">
+          <div class="field">
+            <label for="import-scenario">From Scenario</label>
+            <select id="import-scenario"><option value="">Loading…</option></select>
+          </div>
+          <div class="field">
+            <label for="import-player">Character</label>
+            <select id="import-player"><option value="">—</option></select>
+          </div>
+          <button class="btn btn-tiny btn-block" onclick="importCharacter()">Add to Party</button>
+        </div>
+      </aside>
+
+      <!-- ── Middle: grid ──────────────────────────────────────────── -->
+      <section class="panel">
+        <p class="panel-title">Battlefield</p>
+        <div class="paint-toolbar">
+          <button class="btn paint-mode-btn active" data-mode="place" onclick="setPaintMode('place', this)">Place Creatures</button>
+          <button class="btn paint-mode-btn" data-mode="wall" onclick="setPaintMode('wall', this)">Paint Walls</button>
+          <button class="btn paint-mode-btn" data-mode="difficult" onclick="setPaintMode('difficult', this)">Paint Difficult Terrain</button>
+          <button class="btn paint-mode-btn" data-mode="erase" onclick="setPaintMode('erase', this)">Erase Terrain</button>
+        </div>
+        <div class="board-wrap" id="board-wrap">
+          <p class="field-hint">Set a width/height to generate the battlefield.</p>
+        </div>
+        <p class="placed-count" id="placed-count"></p>
+        <p id="board-error" class="error-msg hidden"></p>
+        <button class="btn" onclick="autoPlaceRemaining()">Auto-Place Remaining</button>
+        <button class="btn btn-primary" id="save-btn" onclick="saveScenario()" style="margin-left:0.5rem;">Save Scenario</button>
+      </section>
+
+      <!-- ── Right: monsters ───────────────────────────────────────── -->
+      <aside class="panel">
+        <p class="panel-title">Monsters <span id="monster-count"></span></p>
+        <div id="monster-list"></div>
+        <button class="btn btn-tiny btn-block" onclick="addMonsterGroup()">+ Add Monster Group</button>
+        <p class="field-hint" style="margin-top:1rem;">Type must match a registered monster key (see the Monsters page).</p>
+      </aside>
+
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "/api/dnd";
+    const DRAFT_KEY = "dnd_scenario_draft";
+
+    function freshDraft() {
+      return {
+        name: "My Encounter",
+        max_rounds: 20,
+        map: { width: 16, height: 12, walls: [], difficult_terrain: [] },
+        players: [],
+        monsters: [],
+        positions: {},   // {[playerName]: [col,row]} plus a client-only "_monsters" working array below
+      };
+    }
+
+    let draft = freshDraft();
+    let monsterPositions = [];  // parallel array, one entry per flattened monster instance: [col,row] or null
+    let paintMode = "place";
+    let armed = null;           // {type:"player", name} or {type:"monster", index}
+
+    function loadDraft() {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          draft = Object.assign(freshDraft(), parsed);
+          draft.map = Object.assign(freshDraft().map, parsed.map || {});
+        }
+      } catch { draft = freshDraft(); }
+      // monsterPositions is kept out of draft.positions (that field mirrors
+      // only the player-name-keyed part during editing, matching the export
+      // shape) and persisted separately under _monsterPositions instead.
+      const totalMonsters = draft.monsters.reduce((n, m) => n + (m.count || 0), 0);
+      const savedPositions = draft._monsterPositions || [];
+      monsterPositions = new Array(totalMonsters).fill(null);
+      for (let i = 0; i < Math.min(savedPositions.length, totalMonsters); i++) {
+        monsterPositions[i] = savedPositions[i];
+      }
+    }
+
+    function saveDraft() {
+      draft._monsterPositions = monsterPositions;
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    }
+
+    // ── Scenario settings ──────────────────────────────────────────────
+
+    function initSettingsFields() {
+      document.getElementById("scen-name").value = draft.name;
+      document.getElementById("scen-w").value = draft.map.width;
+      document.getElementById("scen-h").value = draft.map.height;
+      document.getElementById("scen-rounds").value = draft.max_rounds;
+
+      document.getElementById("scen-name").onchange = e => { draft.name = e.target.value; saveDraft(); };
+      document.getElementById("scen-rounds").onchange = e => { draft.max_rounds = parseInt(e.target.value) || 20; saveDraft(); };
+      document.getElementById("scen-w").onchange = e => { draft.map.width = Math.max(4, Math.min(60, parseInt(e.target.value) || 16)); saveDraft(); renderBoard(); };
+      document.getElementById("scen-h").onchange = e => { draft.map.height = Math.max(4, Math.min(60, parseInt(e.target.value) || 12)); saveDraft(); renderBoard(); };
+    }
+
+    // ── Party ────────────────────────────────────────────────────────
+
+    function renderParty() {
+      document.getElementById("party-count").textContent = `(${draft.players.length})`;
+      const el = document.getElementById("party-list");
+      el.innerHTML = draft.players.length
+        ? draft.players.map(p => {
+            const isPlaced = !!(draft.positions && draft.positions[p.name]);
+            const isArmed = armed && armed.type === "player" && armed.name === p.name;
+            return `
+              <div class="roster-item ${isPlaced ? "placed" : "unplaced"}${isArmed ? " armed" : ""}">
+                <span class="roster-dot blue"></span>
+                <span class="roster-item-name" onclick="armSlot('player', '${p.name}')">${p.name} ${isPlaced ? "" : "(unplaced)"}</span>
+                <button class="btn-danger-tiny" onclick="removePlayer('${p.name}')" title="Remove">✕</button>
+              </div>`;
+          }).join("")
+        : '<p class="field-hint">No characters yet.</p>';
+      updatePlacedCount();
+    }
+
+    function removePlayer(name) {
+      draft.players = draft.players.filter(p => p.name !== name);
+      if (draft.positions) delete draft.positions[name];
+      if (armed && armed.type === "player" && armed.name === name) armed = null;
+      saveDraft();
+      renderParty();
+      renderBoard();
+    }
+
+    function toggleImportBox() {
+      const box = document.getElementById("import-box");
+      box.classList.toggle("hidden");
+      if (!box.classList.contains("hidden")) loadImportScenarios();
+    }
+
+    async function loadImportScenarios() {
+      const sel = document.getElementById("import-scenario");
+      try {
+        const res = await fetch(`${API_URL}/scenarios`);
+        const data = await res.json();
+        sel.innerHTML = '<option value="">— Choose —</option>' + data.scenarios
+          .map(s => `<option value="${s}">${s.replace(".json", "").replace(/_/g, " ")}</option>`).join("");
+        sel.onchange = () => loadImportPlayers(sel.value);
+      } catch { sel.innerHTML = '<option value="">Could not reach API</option>'; }
+    }
+
+    let importScenarioCache = null;
+
+    async function loadImportPlayers(name) {
+      const playerSel = document.getElementById("import-player");
+      if (!name) { playerSel.innerHTML = '<option value="">—</option>'; return; }
+      const res = await fetch(`${API_URL}/scenarios/${name}`);
+      importScenarioCache = await res.json();
+      const players = importScenarioCache.players || [];
+      playerSel.innerHTML = players.length
+        ? players.map(p => `<option value="${p.name}">${p.name}</option>`).join("")
+        : '<option value="">No characters in this scenario</option>';
+    }
+
+    function importCharacter() {
+      const name = document.getElementById("import-player").value;
+      if (!name || !importScenarioCache) return;
+      const player = (importScenarioCache.players || []).find(p => p.name === name);
+      if (!player) return;
+      let finalName = player.name;
+      let n = 2;
+      while (draft.players.some(p => p.name === finalName)) { finalName = `${player.name} (${n++})`; }
+      draft.players.push(Object.assign({}, player, { name: finalName }));
+      saveDraft();
+      renderParty();
+    }
+
+    // ── Monsters ─────────────────────────────────────────────────────
+
+    function renderMonsters() {
+      const total = draft.monsters.reduce((n, m) => n + (m.count || 0), 0);
+      document.getElementById("monster-count").textContent = `(${total})`;
+      const el = document.getElementById("monster-list");
+      el.innerHTML = draft.monsters.length
+        ? draft.monsters.map((m, i) => `
+            <div class="monster-row">
+              <input type="text" value="${m.type || ""}" placeholder="GOBLIN"
+                     onchange="updateMonsterGroup(${i}, 'type', this.value.toUpperCase())" />
+              <input type="number" min="1" value="${m.count || 1}"
+                     onchange="updateMonsterGroup(${i}, 'count', parseInt(this.value) || 1)" />
+              <select onchange="updateMonsterGroup(${i}, 'weapon_role', this.value)">
+                ${["random", "melee", "ranged", "all"].map(r =>
+                  `<option value="${r}" ${((m.weapon_role || "random") === r) ? "selected" : ""}>${r}</option>`
+                ).join("")}
+              </select>
+              <button class="btn-danger-tiny" onclick="removeMonsterGroup(${i})">✕</button>
+            </div>`).join("")
+        : '<p class="field-hint">No monster groups yet.</p>';
+      updatePlacedCount();
+    }
+
+    function addMonsterGroup() {
+      draft.monsters.push({ type: "GOBLIN", count: 1, weapon_role: "random" });
+      resyncMonsterPositions();
+      saveDraft();
+      renderMonsters();
+      renderBoard();
+    }
+
+    function updateMonsterGroup(i, field, value) {
+      draft.monsters[i][field] = value;
+      if (field === "count") resyncMonsterPositions();
+      saveDraft();
+      renderMonsters();
+      renderBoard();
+    }
+
+    function removeMonsterGroup(i) {
+      draft.monsters.splice(i, 1);
+      resyncMonsterPositions();
+      saveDraft();
+      renderMonsters();
+      renderBoard();
+    }
+
+    // Rebuild monsterPositions to match the current total count, preserving
+    // as many existing placements as still make sense positionally.
+    function resyncMonsterPositions() {
+      const total = draft.monsters.reduce((n, m) => n + (m.count || 0), 0);
+      const next = new Array(total).fill(null);
+      for (let i = 0; i < Math.min(total, monsterPositions.length); i++) next[i] = monsterPositions[i];
+      monsterPositions = next;
+      if (armed && armed.type === "monster" && armed.index >= total) armed = null;
+    }
+
+    // ── Terrain + placement grid ─────────────────────────────────────
+
+    function setPaintMode(mode, btn) {
+      paintMode = mode;
+      document.querySelectorAll(".paint-mode-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    }
+
+    function rectListHas(rects, col, row) {
+      return (rects || []).some(([rc, rr, rw, rh]) => col >= rc && col < rc + rw && row >= rr && row < rr + rh);
+    }
+    function removeRect(rects, col, row) {
+      const idx = rects.findIndex(([rc, rr]) => rc === col && rr === row);
+      if (idx >= 0) rects.splice(idx, 1);
+    }
+
+    function monsterLabelFor(index) {
+      let running = 0;
+      for (const m of draft.monsters) {
+        const count = m.count || 0;
+        if (index < running + count) return `${(m.type || "?")} #${index - running + 1}`;
+        running += count;
+      }
+      return `Monster #${index + 1}`;
+    }
+
+    function occupantAt(col, row) {
+      for (const p of draft.players) {
+        const pos = draft.positions && draft.positions[p.name];
+        if (pos && pos[0] === col && pos[1] === row) return { type: "player", name: p.name };
+      }
+      for (let i = 0; i < monsterPositions.length; i++) {
+        const pos = monsterPositions[i];
+        if (pos && pos[0] === col && pos[1] === row) return { type: "monster", index: i };
+      }
+      return null;
+    }
+
+    function armSlot(type, id) {
+      if (type === "player") armed = { type, name: id };
+      else armed = { type: "monster", index: id };
+      renderParty();
+      renderMonstersRoster();
+      renderBoard();
+    }
+
+    function renderMonstersRoster() {
+      // Monster placement roster lives inside the board panel footer area --
+      // rendered as part of renderBoard() below for layout simplicity.
+    }
+
+    function cellClicked(col, row) {
+      document.getElementById("board-error").classList.add("hidden");
+      if (paintMode === "wall") {
+        if (rectListHas(draft.map.walls, col, row)) removeRect(draft.map.walls, col, row);
+        else draft.map.walls.push([col, row, 1, 1]);
+        saveDraft(); renderBoard(); return;
+      }
+      if (paintMode === "difficult") {
+        if (rectListHas(draft.map.difficult_terrain, col, row)) removeRect(draft.map.difficult_terrain, col, row);
+        else draft.map.difficult_terrain.push([col, row, 1, 1]);
+        saveDraft(); renderBoard(); return;
+      }
+      if (paintMode === "erase") {
+        removeRect(draft.map.walls, col, row);
+        removeRect(draft.map.difficult_terrain, col, row);
+        saveDraft(); renderBoard(); return;
+      }
+      // "place" mode
+      if (!armed) return;
+      if (rectListHas(draft.map.walls, col, row)) {
+        document.getElementById("board-error").textContent = "Can't place on a wall.";
+        document.getElementById("board-error").classList.remove("hidden");
+        return;
+      }
+      const occ = occupantAt(col, row);
+      if (occ) { return; }  // don't stack
+
+      if (armed.type === "player") {
+        draft.positions = draft.positions || {};
+        draft.positions[armed.name] = [col, row];
+      } else {
+        monsterPositions[armed.index] = [col, row];
+      }
+      armed = null;
+      saveDraft();
+      renderParty();
+      renderBoard();
+    }
+
+    function tokenClicked(occ, ev) {
+      ev.stopPropagation();
+      armSlot(occ.type, occ.type === "player" ? occ.name : occ.index);
+    }
+
+    function updatePlacedCount() {
+      const totalMonsters = monsterPositions.length;
+      const placedMonsters = monsterPositions.filter(p => p).length;
+      const totalPlayers = draft.players.length;
+      const placedPlayers = draft.players.filter(p => draft.positions && draft.positions[p.name]).length;
+      const el = document.getElementById("placed-count");
+      const complete = placedMonsters === totalMonsters && placedPlayers === totalPlayers;
+      el.textContent = `Players placed: ${placedPlayers}/${totalPlayers}  ·  Monsters placed: ${placedMonsters}/${totalMonsters}`;
+      el.className = "placed-count" + (complete ? " complete" : "");
+      document.getElementById("save-btn").disabled = !(totalPlayers > 0 && totalMonsters > 0 && complete);
+    }
+
+    function renderBoard() {
+      const wrap = document.getElementById("board-wrap");
+      const { width, height } = draft.map;
+      if (!width || !height) { wrap.innerHTML = '<p class="field-hint">Set a width/height first.</p>'; return; }
+
+      let html = `<div class="board" style="grid-template-columns: repeat(${width}, 28px);">`;
+      for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+          const isWall = rectListHas(draft.map.walls, col, row);
+          const isDifficult = rectListHas(draft.map.difficult_terrain, col, row);
+          const occ = occupantAt(col, row);
+          const classes = ["cell"];
+          if (isWall) classes.push("wall");
+          else if (isDifficult) classes.push("difficult");
+          if (paintMode === "place" && armed && !occ && !isWall) classes.push("armed-target");
+
+          let inner = "";
+          if (occ) {
+            const isArmed = armed && armed.type === occ.type &&
+              (occ.type === "player" ? armed.name === occ.name : armed.index === occ.index);
+            const label = occ.type === "player" ? occ.name.slice(0, 2).toUpperCase()
+                                                 : monsterLabelFor(occ.index).slice(0, 2).toUpperCase();
+            const team = occ.type === "player" ? "blue" : "red";
+            inner = `<div class="token ${team}${isArmed ? " armed" : ""}"
+                          title="${occ.type === "player" ? occ.name : monsterLabelFor(occ.index)}"
+                          onclick='tokenClicked(${JSON.stringify(occ)}, event)'>${label}</div>`;
+          }
+          html += `<div class="${classes.join(" ")}" onclick="cellClicked(${col},${row})">${inner}</div>`;
+        }
+      }
+      html += `</div>`;
+      wrap.innerHTML = html;
+      updatePlacedCount();
+    }
+
+    function autoPlaceRemaining() {
+      const { width, height } = draft.map;
+      const occupied = new Set();
+      draft.players.forEach(p => { const pos = draft.positions && draft.positions[p.name]; if (pos) occupied.add(`${pos[0]},${pos[1]}`); });
+      monsterPositions.forEach(pos => { if (pos) occupied.add(`${pos[0]},${pos[1]}`); });
+
+      function nextFreeCell(colStart, colEnd) {
+        for (let row = 0; row < height; row++) {
+          for (let col = colStart; col < colEnd; col++) {
+            if (rectListHas(draft.map.walls, col, row)) continue;
+            const key = `${col},${row}`;
+            if (!occupied.has(key)) { occupied.add(key); return [col, row]; }
+          }
+        }
+        return null;
+      }
+
+      draft.positions = draft.positions || {};
+      draft.players.forEach(p => {
+        if (!draft.positions[p.name]) {
+          const cell = nextFreeCell(0, Math.max(2, Math.floor(width * 0.25)));
+          if (cell) draft.positions[p.name] = cell;
+        }
+      });
+      for (let i = 0; i < monsterPositions.length; i++) {
+        if (!monsterPositions[i]) {
+          const cell = nextFreeCell(Math.floor(width * 0.7), width);
+          if (cell) monsterPositions[i] = cell;
+        }
+      }
+      saveDraft();
+      renderParty();
+      renderBoard();
+    }
+
+    // ── Save ─────────────────────────────────────────────────────────
+
+    async function saveScenario() {
+      const errEl = document.getElementById("board-error");
+      errEl.classList.add("hidden");
+      const filename = (draft.name || "my_encounter").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") + ".json";
+
+      const scenario = {
+        name: draft.name,
+        max_rounds: draft.max_rounds,
+        map: draft.map,
+        players: draft.players,
+        monsters: draft.monsters,
+        positions: Object.assign({}, draft.positions, { monsters: monsterPositions }),
+      };
+
+      try {
+        const res = await fetch(`${API_URL}/scenarios`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenario, filename, overwrite: true }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        localStorage.removeItem(DRAFT_KEY);   // saved -- next visit should start fresh, not resume this one
+        window.location.href = `/dnd/simulator?scenario=${encodeURIComponent(data.filename)}`;
+      } catch (e) {
+        errEl.textContent = `Could not save: ${e.message}`;
+        errEl.classList.remove("hidden");
+      }
+    }
+
+    // ── Init ─────────────────────────────────────────────────────────
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadDraft();
+      initSettingsFields();
+      renderParty();
+      renderMonsters();
+      renderBoard();
+    });
+  </script>
+
+</body>
+</html>
