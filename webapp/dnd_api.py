@@ -56,7 +56,55 @@ def _detail_error(message, status=400):
     return jsonify({"detail": message}), status
 
 
-def _run_episode(scenario_data, silent=True, strategy=None):
+def _apply_board_overrides(all_creatures, battle_map, overrides):
+    """
+    Apply a board-state snapshot on top of a normally-loaded/placed
+    scenario -- the "chess analysis" position evaluator's whole trick is
+    reusing the ordinary simulate path with the party/monsters relocated
+    and/or already-damaged, rather than a separate simulation mode.
+
+    overrides: {
+        "positions":  {creature_name: [col, row]},
+        "hp":         {creature_name: value},
+        "conditions": {creature_name: [condition, ...]},
+    }
+    All keys optional. Unknown creature names are ignored (e.g. the board
+    editor was built against a slightly different monster count).
+
+    HP overrides are clamped to [1, max_hp] -- 0 would leave the engine in
+    an inconsistent state (still gets a turn, still targetable, no
+    creature_downed broadcast) since this bypasses the normal
+    take_damage()/death pipeline entirely. If a creature should be absent
+    from the analysis, leave it out of the scenario's roster instead of
+    setting its HP to 0.
+    """
+    by_name = {c.name: c for c in all_creatures}
+
+    for name, pos in (overrides.get("positions") or {}).items():
+        creature = by_name.get(name)
+        if not creature or not isinstance(pos, (list, tuple)) or len(pos) != 2:
+            continue
+        battle_map.remove(creature)
+        battle_map.place(creature, int(pos[0]), int(pos[1]))
+
+    for name, hp in (overrides.get("hp") or {}).items():
+        creature = by_name.get(name)
+        if not creature:
+            continue
+        try:
+            creature.hp = max(1, min(int(hp), creature.max_hp))
+        except (TypeError, ValueError):
+            continue
+
+    for name, conditions in (overrides.get("conditions") or {}).items():
+        creature = by_name.get(name)
+        if not creature or not isinstance(conditions, list):
+            continue
+        for cond in conditions:
+            creature.add_condition(str(cond))
+
+
+def _run_episode(scenario_data, silent=True, strategy=None, overrides=None):
     captured = io.StringIO()
     ctx = contextlib.redirect_stdout(captured) if silent else contextlib.nullcontext()
 
@@ -93,6 +141,8 @@ def _run_episode(scenario_data, silent=True, strategy=None):
 
         battle_map = build_map(scenario_data)
         place_creatures(scenario_data, players, monsters, battle_map)
+        if overrides:
+            _apply_board_overrides(players + monsters, battle_map, overrides)
         initiative = InitiativeManager(players + monsters, event)
         max_rounds = scenario_data.get("max_rounds", 100)
         cm = CombatManager(event, initiative, battle_map, max_rounds=max_rounds)
@@ -631,6 +681,9 @@ def register_dnd_routes(app, user_dir):
         n = max(1, min(episodes, MAX_EPISODES))
         silent = bool(body.get("silent", True))
         strategy = body.get("strategy")
+        overrides = body.get("overrides")
+        if overrides is not None and not isinstance(overrides, dict):
+            return _detail_error("'overrides' must be an object.", 422)
 
         wins = {"blue": 0, "red": 0, "none": 0}
         total_rounds = 0
@@ -643,7 +696,7 @@ def register_dnd_routes(app, user_dir):
         last = {}
         try:
             for _ in range(n):
-                last = _run_episode(scenario_data, silent=silent, strategy=strategy)
+                last = _run_episode(scenario_data, silent=silent, strategy=strategy, overrides=overrides)
                 winner = last["winner"] or "none"
                 wins[winner] += 1
                 total_rounds += last["rounds"]
