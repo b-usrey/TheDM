@@ -427,7 +427,7 @@
         </div>
         <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem">
           <button class="btn btn-sm" onclick="validateChar()">Validate Character</button>
-          <button class="btn btn-sm btn-primary" onclick="runSim()">Run Simulation</button>
+          <button class="btn btn-sm btn-primary" onclick="runSim()">Open in Simulator</button>
         </div>
       </div>
       <div id="apiStatus"></div>
@@ -1428,18 +1428,20 @@ async function validateChar() {
 async function runSim() {
   const base = document.getElementById('apiUrl').value.replace(/\/$/, '');
   const el   = document.getElementById('apiStatus');
-  el.textContent = 'Running simulation...'; el.className = '';
+  el.textContent = 'Saving scenario...'; el.className = '';
+  const fname = (document.getElementById('saveFile').value || 'my_scenario').replace(/\.json$/, '') + '.json';
   try {
-    const r = await fetch(`${base}/simulate`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({scenario: buildScenario(), episodes: 1, silent: true})
+    const r = await fetch(`${base}/scenarios`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({scenario: buildScenario(), filename: fname, overwrite: true}),
     });
     const data = await r.json();
-    if (r.ok) {
-      el.textContent = `Done — ${data.sample_outcome || JSON.stringify(data).slice(0,200)}`; el.className='ok';
-    } else {
-      el.textContent = 'Error: ' + (data.detail||JSON.stringify(data)); el.className='err';
+    if (!r.ok) {
+      el.textContent = 'Error: ' + (data.detail || JSON.stringify(data)); el.className = 'err';
+      return;
     }
+    el.textContent = 'Saved -- opening in Simulator...'; el.className = 'ok';
+    window.location.href = `/dnd/simulator?scenario=${encodeURIComponent(data.filename)}`;
   } catch(e) { el.textContent = 'Could not reach API. Is the server running?'; el.className='err'; }
 }
 
