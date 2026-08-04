@@ -399,6 +399,23 @@
       font-size: 0.85rem;
     }
 
+    /* ── HP timeline ────────────────────────────────────────────────── */
+    .hp-timeline-wrap { overflow-x: auto; }
+    .hp-timeline-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.9rem;
+      margin-top: 0.6rem;
+      font-size: 0.78rem;
+      color: rgba(232,224,208,0.7);
+    }
+    .hp-legend-swatch {
+      display: inline-block;
+      width: 12px; height: 3px;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+    }
+
     /* ── Creature table ─────────────────────────────────────────────── */
     .creature-table {
       width: 100%;
@@ -555,6 +572,11 @@
           <div class="analyzer-section">
             <p class="panel-title" style="border:none;margin-bottom:0.75rem;">Character Analysis</p>
             <div id="char-analyzer"></div>
+          </div>
+
+          <div class="analyzer-section">
+            <p class="panel-title" style="border:none;margin-bottom:0.75rem;">HP Over Time (sample episode)</p>
+            <div id="hp-timeline"></div>
           </div>
 
           <table class="creature-table">
@@ -733,6 +755,64 @@
       }).join("");
     }
 
+    const TEAM_COLORS = {
+      blue: ["#6ab0e8", "#3d7ab5", "#8ecbfa", "#2a5a8a", "#5490c8"],
+      red:  ["#e87070", "#b54545", "#f5a3a3", "#8a2a2a", "#c85454"],
+    };
+
+    function renderHpTimeline(events) {
+      const el = document.getElementById("hp-timeline");
+      const turnStarts = (events || []).filter(e => e.type === "turn_start");
+      if (!turnStarts.length) {
+        el.innerHTML = '<p class="analyzer-empty">No timeline data for this episode.</p>';
+        return;
+      }
+
+      const byName = {};
+      const order = [];
+      turnStarts.forEach(e => {
+        if (!byName[e.creature]) { byName[e.creature] = { team: e.team, points: [] }; order.push(e.creature); }
+        byName[e.creature].points.push({ round: e.round, pct: e.max_hp ? (e.hp / e.max_hp) * 100 : 0 });
+      });
+
+      const maxRound = Math.max(...turnStarts.map(e => e.round), 1);
+      const W = Math.max(400, maxRound * 40), H = 180, padL = 32, padB = 10, padT = 10, padR = 10;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+      const xFor = r => padL + (maxRound <= 1 ? 0 : (r - 1) / (maxRound - 1) * plotW);
+      const yFor = p => padT + plotH - (p / 100) * plotH;
+
+      const colorIdx = { blue: 0, red: 0 };
+      const colorFor = (team) => {
+        const palette = TEAM_COLORS[team] || TEAM_COLORS.blue;
+        const c = palette[(colorIdx[team] || 0) % palette.length];
+        colorIdx[team] = (colorIdx[team] || 0) + 1;
+        return c;
+      };
+
+      let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%;">`;
+      [0, 50, 100].forEach(p => {
+        const y = yFor(p);
+        svg += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#4a3728" stroke-width="1" />`;
+        svg += `<text x="${padL - 5}" y="${y + 3}" font-size="9" fill="#b0a48f" text-anchor="end">${p}%</text>`;
+      });
+
+      const legendItems = [];
+      order.forEach(name => {
+        const { team, points } = byName[name];
+        const color = colorFor(team);
+        const pts = points.map(p => `${xFor(p.round)},${yFor(p.pct)}`).join(" ");
+        svg += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" opacity="0.9" />`;
+        legendItems.push({ name, color });
+      });
+      svg += `</svg>`;
+
+      const legend = legendItems.map(({ name, color }) =>
+        `<span><span class="hp-legend-swatch" style="background:${color}"></span>${name}</span>`
+      ).join("");
+
+      el.innerHTML = `<div class="hp-timeline-wrap">${svg}</div><div class="hp-timeline-legend">${legend}</div>`;
+    }
+
     async function runSim() {
       const btn          = document.getElementById("run-btn");
       const scenarioName = document.getElementById("scenario-select").value;
@@ -826,6 +906,7 @@
 
         // ── Per-character analyzer ────────────────────────────────────────
         renderCharacterAnalyzer(data.character_stats, data.resource_usage, data.avg_rounds);
+        renderHpTimeline(data.sample_events);
 
         // ── Sample-episode snapshot ───────────────────────────────────────
         document.getElementById("res-outcome").textContent = data.sample_outcome;
