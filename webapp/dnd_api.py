@@ -187,6 +187,39 @@ def _run_episode(scenario_data, silent=True, strategy=None, overrides=None):
     }
 
 
+def _resolve_scenario_roster(scenario_data):
+    """
+    Load + place a scenario's creatures (same setup _run_episode does)
+    without running any combat, and report each one's resolved name, team,
+    starting position, and HP -- what the board-state editor needs to
+    render initial tokens. Monster instance names (e.g. "Bugbear#1") only
+    exist after CreatureFactory builds them, so the frontend can't derive
+    them from the raw scenario JSON alone.
+    """
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        event = EventBus()
+        factory = CreatureFactory()
+        loader = ScenarioLoader(factory, event)
+        players, monsters = loader.load(scenario_data)
+        battle_map = build_map(scenario_data)
+        place_creatures(scenario_data, players, monsters, battle_map)
+
+    roster = []
+    for c in players + monsters:
+        pos = battle_map.get_position(c)
+        roster.append({
+            "name":   c.name,
+            "team":   getattr(c, "team", "unknown"),
+            "col":    pos[0] if pos else None,
+            "row":    pos[1] if pos else None,
+            "hp":     c.hp,
+            "max_hp": c.max_hp,
+            "ac":     c.ac,
+        })
+    return roster
+
+
 def _party_levels_from_scenario(scenario_data):
     """Total character level per player (summed across multiclass levels),
     for score_encounter's DMG XP-budget math."""
@@ -577,6 +610,27 @@ def register_dnd_routes(app, user_dir):
             return _detail_error(f"Scenario '{filename}' not found.", 404)
         with open(path, encoding="utf-8") as f:
             return jsonify(json.load(f))
+
+    @app.route("/api/dnd/scenarios/<filename>/roster")
+    def api_dnd_scenario_roster(filename):
+        """Resolved creature names + starting positions/HP for the board-
+        state analyzer -- monster instance names only exist after
+        CreatureFactory builds them, so the frontend can't derive its own
+        token list from the raw scenario JSON."""
+        username = session["username"]
+        path = _find_scenario_path(username, filename)
+        if not path:
+            return _detail_error(f"Scenario '{filename}' not found.", 404)
+        with open(path, encoding="utf-8") as f:
+            scenario_data = json.load(f)
+        try:
+            roster = _resolve_scenario_roster(scenario_data)
+        except Exception as exc:
+            return _detail_error(str(exc), 500)
+        return jsonify({
+            "map":    scenario_data.get("map", {}),
+            "roster": roster,
+        })
 
     @app.route("/api/dnd/scenarios", methods=["POST"])
     def api_dnd_save_scenario():
