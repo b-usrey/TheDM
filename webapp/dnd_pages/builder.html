@@ -227,6 +227,9 @@
     .respec-table th { font-size: 0.68rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--gold-dim); }
     .respec-delta-up { color: #7ecb7e; } .respec-delta-down { color: #ff8a80; } .respec-delta-flat { color: var(--gold-dim); }
 
+    .dvd-legend { display: flex; flex-wrap: wrap; gap: 0.9rem; margin-top: 0.6rem; font-size: 0.78rem; color: rgba(232,224,208,0.75); }
+    .dvd-legend-swatch { display: inline-block; width: 12px; height: 3px; margin-right: 0.35rem; vertical-align: middle; }
+
     /* ── Misc ── */
     .hint { font-size: 0.82rem; color: var(--gold-dim); font-style: italic; margin-bottom: 0.75rem; }
     .tag-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
@@ -458,6 +461,19 @@
       <button class="btn btn-sm" onclick="runPowerCurve()" id="powerCurveBtn">Compute Power Curve</button>
       <p id="powerCurveStatus" class="hint" style="margin-top:0.6rem;"></p>
       <div id="powerCurveChart"></div>
+    </div>
+
+    <div class="api-section">
+      <h3>Damage vs. Defense</h3>
+      <p class="hint">
+        Compares this build's damage per round against four defense tiers (AC 12/15/18/21) --
+        optionally with a hypothetical feat or advantage added on top of your current choices,
+        so you can see which tactics actually move the needle, and against what kind of target.
+      </p>
+      <div id="dvdChecks" style="display:flex;flex-wrap:wrap;gap:0.9rem;margin-bottom:0.75rem;font-size:0.85rem;color:var(--parchment);"></div>
+      <button class="btn btn-sm" onclick="runDamageVsDefense()" id="dvdBtn">Compare</button>
+      <p id="dvdStatus" class="hint" style="margin-top:0.6rem;"></p>
+      <div id="dvdChart"></div>
     </div>
 
     <div class="api-section">
@@ -1624,6 +1640,129 @@ async function runPowerCurve() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  DAMAGE VS. DEFENSE (multi-build comparison)
+// ═══════════════════════════════════════════════════════════════
+
+const DVD_TIERS = [
+  { key: "TRAINING_DUMMY_AC12", ac: 12 },
+  { key: "TRAINING_DUMMY_AC15", ac: 15 },
+  { key: "TRAINING_DUMMY_AC18", ac: 18 },
+  { key: "TRAINING_DUMMY_AC21", ac: 21 },
+];
+
+// featName gets pushed onto a clone of the current build's own feats list
+// (not swapped in place of it) -- the question this answers is "what would
+// ADDING this on top of my current choices do," same framing as the Respec
+// Sandbox. "Advantage (Test)" isn't a real 5e feat -- it's a tiny analysis-
+// only hook (dndpython/data/features/analysis_aids.py) that just grants
+// advantage on every attack, standing in for "attacking under favorable
+// conditions" without picking one specific source of it.
+const DVD_VARIANTS = [
+  { key: "sharpshooter", label: "Sharpshooter",        featName: "Sharpshooter",         color: "#6ab0e8" },
+  { key: "gwm",          label: "Great Weapon Master",  featName: "Great Weapon Master",  color: "#e8ab6a" },
+  { key: "piercer",      label: "Piercer",              featName: "Piercer",              color: "#7ecb7e" },
+  { key: "savage",       label: "Savage Attacker",      featName: "Savage Attacker",      color: "#e87ec9" },
+  { key: "advantage",    label: "Advantage",            featName: "Advantage (Test)",     color: "#e8d38a" },
+];
+
+function renderDvdChecks() {
+  const el = document.getElementById('dvdChecks');
+  el.innerHTML = DVD_VARIANTS.map(v => `
+    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;">
+      <input type="checkbox" id="dvd-check-${v.key}" /> ${v.label}
+    </label>`).join('');
+}
+
+function playerWithFeatAdded(featName) {
+  const player = JSON.parse(JSON.stringify(buildPlayer()));
+  player.feats = [...(player.feats || []), featName];
+  return player;
+}
+
+async function dprAgainstTier(player, tierKey, rounds, episodes) {
+  const base = document.getElementById('apiUrl').value.replace(/\/$/, '');
+  const scenario = {
+    name: `Damage vs Defense — ${player.name}`,
+    max_rounds: rounds,
+    map: { width: 12, height: 8, walls: [], difficult_terrain: [] },
+    positions: { [player.name]: [1, 3], monsters: [[5, 3]] },
+    players: [player],
+    monsters: [{ type: tierKey, count: 1 }],
+  };
+  const res = await fetch(`${base}/simulate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scenario, episodes, silent: true }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  const stats = (data.character_stats || {})[player.name] || { damage_by_round: {} };
+  const totalDamage = Object.values(stats.damage_by_round).reduce((a, b) => a + b, 0);
+  return rounds ? totalDamage / rounds : 0;
+}
+
+function renderMultiLineChart(series, xLabels) {
+  const W = 480, H = 220, padL = 34, padR = 16, padT = 16, padB = 26;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = xLabels.length;
+  const maxV = Math.max(...series.flatMap(s => s.values), 1);
+  const xFor = i => padL + (n <= 1 ? 0 : (i / (n - 1)) * plotW);
+  const yFor = v => padT + plotH - (v / maxV) * plotH;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%;">`;
+  [0, 0.5, 1].forEach(f => {
+    const y = padT + plotH - f * plotH;
+    svg += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#4a3728" stroke-width="1" />`;
+    svg += `<text x="${padL - 5}" y="${y + 3}" font-size="9" fill="#b0a48f" text-anchor="end">${(f * maxV).toFixed(0)}</text>`;
+  });
+  xLabels.forEach((label, i) => {
+    svg += `<text x="${xFor(i)}" y="${H - 6}" font-size="9" fill="#b0a48f" text-anchor="middle">AC ${label}</text>`;
+  });
+  series.forEach(s => {
+    const pts = s.values.map((v, i) => `${xFor(i)},${yFor(v)}`).join(' ');
+    svg += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2.5" opacity="0.9" />`;
+    s.values.forEach((v, i) => { svg += `<circle cx="${xFor(i)}" cy="${yFor(v)}" r="3" fill="${s.color}" />`; });
+  });
+  svg += `</svg>`;
+
+  const legend = series.map(s =>
+    `<span><span class="dvd-legend-swatch" style="background:${s.color}"></span>${s.label} `
+    + `(${s.values[s.values.length - 1].toFixed(1)} @ AC${xLabels[xLabels.length - 1]})</span>`
+  ).join('');
+
+  return `<div style="overflow-x:auto;">${svg}</div><div class="dvd-legend">${legend}</div>`;
+}
+
+async function runDamageVsDefense() {
+  const statusEl = document.getElementById('dvdStatus');
+  const chartEl  = document.getElementById('dvdChart');
+  const btn      = document.getElementById('dvdBtn');
+
+  const checked = DVD_VARIANTS.filter(v => document.getElementById(`dvd-check-${v.key}`).checked);
+  const baseline = { key: 'baseline', label: 'Current Build', color: '#e8e0d0', featName: null };
+  const series = [baseline, ...checked];
+
+  btn.disabled = true;
+  chartEl.innerHTML = '';
+  try {
+    for (const s of series) {
+      s.values = [];
+      for (const tier of DVD_TIERS) {
+        statusEl.textContent = `Testing ${s.label} vs AC ${tier.ac}…`;
+        const player = s.featName ? playerWithFeatAdded(s.featName) : buildPlayer();
+        s.values.push(await dprAgainstTier(player, tier.key, 6, 20));
+      }
+    }
+    statusEl.textContent = `Compared ${series.length} build(s) across AC ${DVD_TIERS.map(t => t.ac).join('/')} `
+      + `(6 rounds, 20 episodes each).`;
+    chartEl.innerHTML = renderMultiLineChart(series, DVD_TIERS.map(t => t.ac));
+  } catch (e) {
+    statusEl.textContent = `Error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 let respecSnapshot = null;
 
 async function snapshotBuild() {
@@ -1680,6 +1819,7 @@ async function compareToSnapshot() {
 initRaceGrid();
 addMonsterRow();
 renderStatTable();
+renderDvdChecks();
 </script>
 </body>
 </html>
