@@ -215,6 +215,18 @@
     .api-section { margin-top: 1.5rem; border-top: 1px solid #4a3728; padding-top: 1rem; }
     .api-section h3 { font-size: 0.82rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--gold-dim); margin-bottom: 0.75rem; }
 
+    /* ── Power curve / respec panels ── */
+    .pc-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 0.75rem; }
+    .pc-chart-card { background: #1c1a17; border: 1px solid #4a3728; border-radius: 4px; padding: 0.85rem; }
+    .pc-chart-title { font-size: 0.72rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--gold-dim); margin-bottom: 0.5rem; }
+    .pc-chart-current { font-size: 0.72rem; color: rgba(232,224,208,0.55); margin-top: 0.35rem; }
+
+    .respec-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.88rem; }
+    .respec-table th, .respec-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #33291f; text-align: right; }
+    .respec-table th:first-child, .respec-table td:first-child { text-align: left; }
+    .respec-table th { font-size: 0.68rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--gold-dim); }
+    .respec-delta-up { color: #7ecb7e; } .respec-delta-down { color: #ff8a80; } .respec-delta-flat { color: var(--gold-dim); }
+
     /* ── Misc ── */
     .hint { font-size: 0.82rem; color: var(--gold-dim); font-style: italic; margin-bottom: 0.75rem; }
     .tag-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
@@ -434,6 +446,32 @@
         </div>
       </div>
       <div id="apiStatus"></div>
+    </div>
+
+    <div class="api-section">
+      <h3>Power Curve</h3>
+      <p class="hint">
+        Re-tests this exact build at every level from 1 up to your current level, vs. a fixed
+        AC 15 target, so you can see where AC, HP, and damage output actually jump -- not just
+        where the class table says a feature unlocks.
+      </p>
+      <button class="btn btn-sm" onclick="runPowerCurve()" id="powerCurveBtn">Compute Power Curve</button>
+      <p id="powerCurveStatus" class="hint" style="margin-top:0.6rem;"></p>
+      <div id="powerCurveChart"></div>
+    </div>
+
+    <div class="api-section">
+      <h3>Respec Sandbox</h3>
+      <p class="hint">
+        Snapshot this build, then go back and change one thing -- a feature choice, ASI split,
+        feat, subclass, race, or stats -- and compare. See the DPR/AC/HP delta without starting over.
+      </p>
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+        <button class="btn btn-sm" onclick="snapshotBuild()">Snapshot Current Build</button>
+        <button class="btn btn-sm btn-primary" onclick="compareToSnapshot()" id="compareBtn" disabled>Compare to Snapshot</button>
+      </div>
+      <p id="respecStatus" class="hint" style="margin-top:0.6rem;"></p>
+      <div id="respecResult"></div>
     </div>
 
     <div class="nav-row">
@@ -1308,35 +1346,41 @@ function addMonsterRow(type, count, role) {
 //  STEP 6 — Export
 // ═══════════════════════════════════════════════════════════════
 
-function buildPlayer() {
+function buildPlayerAtLevel(maxLevel) {
   const cls = document.getElementById('classSelect').value || 'Fighter';
-  const lv  = +document.getElementById('levelSlider').value || 1;
   const name = document.getElementById('charName').value || 'Hero';
   const rn   = getSelectedRace();
 
-  // Subclass
+  // Subclass -- only counts if the feature that grants it was reached by
+  // maxLevel (so a level-3 preview of a level-8 build has no subclass yet).
   let subclass = null;
   for (const [key, val] of Object.entries(featureChoices)) {
-    if (isSubclassFeature(key)) { subclass = val; break; }
+    if (isSubclassFeature(key) && +key.split('__')[1] <= maxLevel) { subclass = val; break; }
   }
 
-  // Choices array
+  // Choices array, filtered to the levels reached so far
   const choices = [];
   for (const [key, val] of Object.entries(featureChoices)) {
     const [c, l, ...rest] = key.split('__');
-    choices.push([c, +l, rest.join('__'), val]);
+    if (+l <= maxLevel) choices.push([c, +l, rest.join('__'), val]);
   }
 
   // Speed from race
   const speed = rn ? RACES_DATA[rn].speed : 30;
 
   // Export stats WITHOUT feat stat bonuses — the Python feature attach()
-  // applies those, so including them here would double-count them.
+  // applies those, so including them here would double-count them. Only
+  // ASIs at or below maxLevel are applied, since asiChoices is keyed by
+  // the level the ASI/feat was taken at.
   const base   = getBaseStats();
   const race   = getRaceBonuses();
   const asiOnly = {}; STATS.forEach(s => asiOnly[s] = 0);
-  Object.values(asiChoices).forEach(ac => {
-    if (ac.type !== 'feat') {
+  const feats = [];
+  Object.entries(asiChoices).forEach(([lvlKey, ac]) => {
+    if (+lvlKey > maxLevel) return;
+    if (ac.type === 'feat') {
+      if (ac.feat) feats.push(ac.feat);
+    } else {
       if (ac.s1) asiOnly[ac.s1] = (asiOnly[ac.s1]||0) + (ac.type === '2+0' ? 2 : 1);
       if (ac.type === '1+1' && ac.s2) asiOnly[ac.s2] = (asiOnly[ac.s2]||0) + 1;
     }
@@ -1346,7 +1390,7 @@ function buildPlayer() {
 
   const player = {
     name,
-    classes: [[cls, lv]],
+    classes: [[cls, maxLevel]],
     stats: exportStats,
     speed,
     items: [...invSet],
@@ -1358,15 +1402,13 @@ function buildPlayer() {
     player.subclasses = { [cls]: subclass.toLowerCase().replace(/ /g,'_') };
   }
   if (rn) player.race = rn;
-
-  // Collect feat selections
-  const feats = [];
-  Object.values(asiChoices).forEach(ac => {
-    if (ac.type === 'feat' && ac.feat) feats.push(ac.feat);
-  });
   if (feats.length) player.feats = feats;
 
   return player;
+}
+
+function buildPlayer() {
+  return buildPlayerAtLevel(+document.getElementById('levelSlider').value || 1);
 }
 
 function buildScenario() {
@@ -1476,6 +1518,159 @@ function addToScenarioDraft() {
   localStorage.setItem(SCENARIO_DRAFT_KEY, JSON.stringify(draft));
   el.textContent = `Added "${finalName}" -- opening Scenario Builder...`; el.className = 'ok';
   window.location.href = '/dnd/scenario-builder';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  POWER CURVE & RESPEC SANDBOX
+// ═══════════════════════════════════════════════════════════════
+
+// Runs `player` solo against a stationary AC-15 dummy and reduces the
+// result to the three numbers both the power curve and the respec
+// sandbox care about. AC 15 is a fixed reference target -- the point of
+// both features is comparing a build against ITSELF (across levels, or
+// before/after a choice), not modeling any particular real encounter.
+async function quickDummyTest(player, rounds, episodes) {
+  const base = document.getElementById('apiUrl').value.replace(/\/$/, '');
+  const scenario = {
+    name: `Quick test — ${player.name}`,
+    max_rounds: rounds,
+    map: { width: 12, height: 8, walls: [], difficult_terrain: [] },
+    positions: { [player.name]: [1, 3], monsters: [[5, 3]] },
+    players: [player],
+    monsters: [{ type: 'TRAINING_DUMMY_AC15', count: 1 }],
+  };
+  const res = await fetch(`${base}/simulate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scenario, episodes, silent: true }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  const stats = (data.character_stats || {})[player.name] || { damage_by_round: {} };
+  const totalDamage = Object.values(stats.damage_by_round).reduce((a, b) => a + b, 0);
+  const me = (data.creatures || []).find(c => c.team === 'blue') || {};
+  return {
+    dpr: rounds ? totalDamage / rounds : 0,
+    ac: me.ac ?? null,
+    hp: me.max_hp ?? null,
+  };
+}
+
+function renderMiniLineChart(results, key, title, color, fmt) {
+  const W = 220, H = 100, padL = 28, padR = 10, padT = 10, padB = 18;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const vals = results.map(r => r[key]).filter(v => v !== null && v !== undefined);
+  const maxV = Math.max(...vals, 1), minV = Math.min(0, ...vals);
+  const n = results.length;
+  const xFor = i => padL + (n <= 1 ? 0 : (i / (n - 1)) * plotW);
+  const yFor = v => padT + plotH - ((v - minV) / ((maxV - minV) || 1)) * plotH;
+
+  const pts = results.map((r, i) => `${xFor(i)},${yFor(r[key] ?? 0)}`).join(' ');
+  const dots = results.map((r, i) =>
+    `<circle cx="${xFor(i)}" cy="${yFor(r[key] ?? 0)}" r="2.5" fill="${color}" />`).join('');
+  const lastVal = results[results.length - 1][key];
+
+  const svg = `
+    <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%;">
+      <line x1="${padL}" y1="${yFor(minV)}" x2="${W - padR}" y2="${yFor(minV)}" stroke="#4a3728" stroke-width="1" />
+      <line x1="${padL}" y1="${yFor(maxV)}" x2="${W - padR}" y2="${yFor(maxV)}" stroke="#4a3728" stroke-width="1" />
+      <text x="${padL - 4}" y="${yFor(maxV) + 3}" font-size="8" fill="#b0a48f" text-anchor="end">${fmt(maxV)}</text>
+      <text x="${padL - 4}" y="${yFor(minV) + 3}" font-size="8" fill="#b0a48f" text-anchor="end">${fmt(minV)}</text>
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" />
+      ${dots}
+      <text x="${padL}" y="${H - 4}" font-size="8" fill="#b0a48f">Lv${results[0].level}</text>
+      <text x="${W - padR}" y="${H - 4}" font-size="8" fill="#b0a48f" text-anchor="end">Lv${results[results.length - 1].level}</text>
+    </svg>`;
+
+  return `
+    <div class="pc-chart-card">
+      <div class="pc-chart-title">${title}</div>
+      ${svg}
+      <div class="pc-chart-current">Now: ${fmt(lastVal)}</div>
+    </div>`;
+}
+
+function renderPowerCurveChart(results) {
+  return `<div class="pc-charts">
+    ${renderMiniLineChart(results, 'dpr', 'Damage / Round (vs AC 15)', '#e8ab6a', v => v.toFixed(1))}
+    ${renderMiniLineChart(results, 'ac', 'Armor Class', '#6ab0e8', v => Math.round(v))}
+    ${renderMiniLineChart(results, 'hp', 'Hit Points', '#7ecb7e', v => Math.round(v))}
+  </div>`;
+}
+
+async function runPowerCurve() {
+  const statusEl = document.getElementById('powerCurveStatus');
+  const chartEl  = document.getElementById('powerCurveChart');
+  const btn      = document.getElementById('powerCurveBtn');
+  const maxLevel = Math.max(1, +document.getElementById('levelSlider').value || 1);
+
+  btn.disabled = true;
+  chartEl.innerHTML = '';
+  const results = [];
+  try {
+    for (let lvl = 1; lvl <= maxLevel; lvl++) {
+      statusEl.textContent = `Testing level ${lvl} of ${maxLevel}…`;
+      const player = buildPlayerAtLevel(lvl);
+      const r = await quickDummyTest(player, 5, 6);
+      results.push({ level: lvl, ...r });
+    }
+    statusEl.textContent = maxLevel > 1
+      ? `Computed across levels 1–${maxLevel}, each vs. a fixed AC 15 target (5 rounds, 6 episodes/level).`
+      : `Level 1 only -- raise the level slider in step II to see a curve.`;
+    chartEl.innerHTML = renderPowerCurveChart(results);
+  } catch (e) {
+    statusEl.textContent = `Error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+let respecSnapshot = null;
+
+async function snapshotBuild() {
+  const statusEl = document.getElementById('respecStatus');
+  statusEl.textContent = 'Testing current build…';
+  try {
+    const player = buildPlayer();
+    const lv = +document.getElementById('levelSlider').value || 1;
+    const result = await quickDummyTest(player, 8, 15);
+    respecSnapshot = { label: `Level ${lv} snapshot`, ...result };
+    document.getElementById('compareBtn').disabled = false;
+    statusEl.textContent = `Snapshot taken: ${result.dpr.toFixed(1)} DPR, AC ${result.ac}, ${result.hp} HP. `
+      + `Now change a choice and click Compare.`;
+    document.getElementById('respecResult').innerHTML = '';
+  } catch (e) {
+    statusEl.textContent = `Error: ${e.message}`;
+  }
+}
+
+function respecDeltaCell(before, after, digits = 1) {
+  const delta = after - before;
+  const cls = delta > 0.001 ? 'respec-delta-up' : delta < -0.001 ? 'respec-delta-down' : 'respec-delta-flat';
+  const sign = delta > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${delta.toFixed(digits)}</span>`;
+}
+
+async function compareToSnapshot() {
+  const statusEl = document.getElementById('respecStatus');
+  if (!respecSnapshot) { statusEl.textContent = 'Take a snapshot first.'; return; }
+  statusEl.textContent = 'Testing current build…';
+  try {
+    const player = buildPlayer();
+    const after = await quickDummyTest(player, 8, 15);
+    const before = respecSnapshot;
+    document.getElementById('respecResult').innerHTML = `
+      <table class="respec-table">
+        <thead><tr><th></th><th>${before.label}</th><th>Current Build</th><th>Δ</th></tr></thead>
+        <tbody>
+          <tr><td>Damage / Round (vs AC 15)</td><td>${before.dpr.toFixed(1)}</td><td>${after.dpr.toFixed(1)}</td><td>${respecDeltaCell(before.dpr, after.dpr)}</td></tr>
+          <tr><td>Armor Class</td><td>${before.ac}</td><td>${after.ac}</td><td>${respecDeltaCell(before.ac, after.ac, 0)}</td></tr>
+          <tr><td>Hit Points</td><td>${before.hp}</td><td>${after.hp}</td><td>${respecDeltaCell(before.hp, after.hp, 0)}</td></tr>
+        </tbody>
+      </table>`;
+    statusEl.textContent = 'Compared against the snapshot above.';
+  } catch (e) {
+    statusEl.textContent = `Error: ${e.message}`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

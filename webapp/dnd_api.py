@@ -172,6 +172,7 @@ def _run_episode(scenario_data, silent=True, strategy=None, overrides=None):
             "team": getattr(c, "team", "unknown"),
             "hp": max(c.hp, 0),
             "max_hp": c.max_hp,
+            "ac": getattr(c, "ac", None),
             "alive": c.is_alive(),
         }
         for c in all_creatures
@@ -673,6 +674,25 @@ def register_dnd_routes(app, user_dir):
             "roster": roster,
         })
 
+    @app.route("/api/dnd/scenario-roster", methods=["POST"])
+    def api_dnd_scenario_roster_inline():
+        """Same as the GET-by-filename roster route, but takes the scenario
+        body directly -- lets the position-sensitivity tester resolve a
+        roster (and starting map) for a scenario the user has live-tuned
+        (e.g. edited monster counts) but not necessarily saved yet."""
+        body = request.get_json(silent=True) or {}
+        scenario_data = body.get("scenario")
+        if not isinstance(scenario_data, dict):
+            return _detail_error("Request body must contain a 'scenario' object.", 422)
+        try:
+            roster = _resolve_scenario_roster(scenario_data)
+        except Exception as exc:
+            return _detail_error(str(exc), 500)
+        return jsonify({
+            "map":    scenario_data.get("map", {}),
+            "roster": roster,
+        })
+
     @app.route("/api/dnd/scenarios", methods=["POST"])
     def api_dnd_save_scenario():
         username = session["username"]
@@ -788,6 +808,7 @@ def register_dnd_routes(app, user_dir):
         win_hp_pcts = []
         pc_death_counts = {}
         all_events = []
+        outcome_breakdown = {"clean_win": 0, "costly_win": 0, "tpk": 0, "other_loss": 0}
         last = {}
         try:
             for _ in range(n):
@@ -800,9 +821,11 @@ def register_dnd_routes(app, user_dir):
 
                 blue = [c for c in last["creatures"] if c["team"] == "blue"]
                 blue_alive = [c for c in blue if c["alive"]]
-                if blue and not blue_alive:
+                is_tpk = bool(blue) and not blue_alive
+                is_any_down = len(blue_alive) < len(blue)
+                if is_tpk:
                     tpk_count += 1
-                if len(blue_alive) < len(blue):
+                if is_any_down:
                     any_down_count += 1
                 for c in blue:
                     pc_death_counts.setdefault(c["name"], 0)
@@ -812,6 +835,11 @@ def register_dnd_routes(app, user_dir):
                     total_max = sum(c["max_hp"] for c in blue)
                     if total_max > 0:
                         win_hp_pcts.append(sum(c["hp"] for c in blue) / total_max)
+                    outcome_breakdown["costly_win" if is_any_down else "clean_win"] += 1
+                elif is_tpk:
+                    outcome_breakdown["tpk"] += 1
+                else:
+                    outcome_breakdown["other_loss"] += 1
         except Exception as exc:
             return _detail_error(str(exc), 500)
 
@@ -844,6 +872,8 @@ def register_dnd_routes(app, user_dir):
                                             if win_hp_pcts else None),
                 "rounds_min":             min(rounds_seen) if rounds_seen else 0,
                 "rounds_max":             max(rounds_seen) if rounds_seen else 0,
+                "rounds_seen":            rounds_seen,
+                "outcome_breakdown":      outcome_breakdown,
                 "per_pc_death_rate":      {name: count / n for name, count in pc_death_counts.items()},
             },
             "difficulty": difficulty,
