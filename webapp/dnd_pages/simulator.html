@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/dnd/theme.css" />
   <title>Combat Simulator — DnDPython</title>
   <style>
     /* ── Tokens ─────────────────────────────────────────────────────── */
@@ -66,7 +67,7 @@
     /* ── Layout ─────────────────────────────────────────────────────── */
     .sim-layout {
       display: grid;
-      grid-template-columns: 300px 1fr;
+      grid-template-columns: 320px 1fr;
       gap: 2rem;
       align-items: start;
     }
@@ -162,7 +163,7 @@
     /* ── Monster tuning ─────────────────────────────────────────────── */
     .tuning-row {
       display: grid;
-      grid-template-columns: 1fr 48px 76px 22px;
+      grid-template-columns: minmax(0, 1fr) 58px 92px 24px;
       gap: 0.35rem;
       align-items: center;
       margin-bottom: 0.5rem;
@@ -669,7 +670,7 @@
         <a class="back-link" href="/dnd">← Home</a>
         <a class="back-link" href="/dnd/builder">Builder</a>
         <a class="back-link" href="/dnd/scenario-builder">Scenario Builder</a>
-        <a class="back-link" href="/dnd/simulator">Simulator</a>
+        <a class="back-link" aria-current="page" href="/dnd/simulator">Simulator</a>
         <a class="back-link" href="/dnd/analyzer">Position Analyzer</a>
         <a class="back-link" href="/dnd/dummy">Dummy Tester</a>
         <a class="back-link" href="/dnd/scenarios">Scenarios</a>
@@ -677,7 +678,7 @@
         <a class="back-link" href="/dnd/classes">Classes</a>
         <a class="back-link" href="/app" style="margin-left:1.5rem;">Map Generator →</a>
       </nav>
-      <h1 class="sim-title">⚔️ Combat Simulator</h1>
+      <h1 class="sim-title">Combat Simulator</h1>
     </header>
 
     <div class="sim-layout">
@@ -779,32 +780,39 @@
 
           <div class="pc-death-list" id="pc-death-list"></div>
 
-          <div class="analyzer-section">
-            <p class="panel-title" style="border:none;margin-bottom:0.75rem;">Risk Profile</p>
-            <p class="char-subtitle" style="margin-top:0;">Outcome Breakdown</p>
-            <div id="outcome-breakdown"></div>
-            <p class="char-subtitle">Fight Length Distribution</p>
-            <div id="rounds-histogram"></div>
-          </div>
+          <details class="analyzer-section dnd-section" open>
+            <summary>Risk Profile</summary>
+            <div class="dnd-section-body">
+              <p class="char-subtitle" style="margin-top:0;">Outcome Breakdown</p>
+              <div id="outcome-breakdown"></div>
+              <p class="char-subtitle">Fight Length Distribution</p>
+              <div id="rounds-histogram"></div>
+            </div>
+          </details>
 
-          <div class="analyzer-section">
-            <p class="panel-title" style="border:none;margin-bottom:0.75rem;">Character Analysis</p>
-            <div id="char-analyzer"></div>
-          </div>
+          <details class="analyzer-section dnd-section" open>
+            <summary>Character Analysis</summary>
+            <div class="dnd-section-body">
+              <div id="char-analyzer"></div>
+            </div>
+          </details>
 
-          <div class="analyzer-section">
-            <p class="panel-title" style="border:none;margin-bottom:0.75rem;">HP Over Time (sample episode)</p>
-            <div id="hp-timeline"></div>
-          </div>
+          <details class="analyzer-section dnd-section">
+            <summary>HP Over Time (sample episode)</summary>
+            <div class="dnd-section-body">
+              <div id="hp-timeline"></div>
+            </div>
+          </details>
 
-          <div class="analyzer-section hidden" id="trace-section">
-            <p class="panel-title" style="border:none;margin-bottom:0.75rem;">Decision Trace (sample episode)</p>
+          <details class="analyzer-section dnd-section hidden" id="trace-section">
+            <summary>Decision Trace (sample episode)</summary>
+            <div class="dnd-section-body">
             <div class="trace-transport">
-              <button class="trace-btn" id="trace-first" onclick="traceGoto(0)" title="First turn">⏮</button>
-              <button class="trace-btn" id="trace-prev" onclick="traceStep(-1)" title="Previous turn">◀</button>
-              <button class="trace-btn" id="trace-play" onclick="traceTogglePlay()" title="Play/pause">▶</button>
-              <button class="trace-btn" id="trace-next" onclick="traceStep(1)" title="Next turn">▶❚</button>
-              <button class="trace-btn" id="trace-last" onclick="traceGoto(-1)" title="Last turn">⏭</button>
+              <button class="trace-btn" id="trace-first" onclick="traceGoto(0)" title="First turn" aria-label="First turn">⏮</button>
+              <button class="trace-btn" id="trace-prev" onclick="traceStep(-1)" title="Previous turn" aria-label="Previous turn">◀</button>
+              <button class="trace-btn" id="trace-play" onclick="traceTogglePlay()" title="Play/pause" aria-label="Play or pause">▶</button>
+              <button class="trace-btn" id="trace-next" onclick="traceStep(1)" title="Next turn" aria-label="Next turn">▶❚</button>
+              <button class="trace-btn" id="trace-last" onclick="traceGoto(-1)" title="Last turn" aria-label="Last turn">⏭</button>
               <input type="range" class="trace-scrubber" id="trace-scrubber" min="0" max="0" value="0"
                      oninput="traceGoto(parseInt(this.value))" />
               <span class="trace-position" id="trace-position">—</span>
@@ -813,14 +821,20 @@
               </select>
             </div>
             <div id="trace-card"></div>
-          </div>
+            </div>
+          </details>
 
-          <table class="creature-table">
-            <thead>
-              <tr><th>Name</th><th>Team</th><th>HP</th><th>Status</th></tr>
-            </thead>
-            <tbody id="res-creatures"></tbody>
-          </table>
+          <details class="analyzer-section dnd-section">
+            <summary>Final State (sample episode)</summary>
+            <div class="dnd-section-body">
+              <table class="creature-table">
+                <thead>
+                  <tr><th>Name</th><th>Team</th><th>HP</th><th>Status</th></tr>
+                </thead>
+                <tbody id="res-creatures"></tbody>
+              </table>
+            </div>
+          </details>
 
           <details class="log-details">
             <summary>Combat Log (sample episode)</summary>
@@ -970,9 +984,13 @@
           sel.innerHTML = '<option value="">No scenarios found</option>';
           return;
         }
-        sel.innerHTML = data.scenarios
-          .map(s => `<option value="${s}">${s.replace(".json", "").replace(/_/g, " ")}</option>`)
-          .join("");
+        const opt = s => `<option value="${s}">${s.replace(".json", "").replace(/_/g, " ")}</option>`;
+        // Grouped when the API distinguishes the user's files from the
+        // bundled samples; flat list for older servers that don't.
+        sel.innerHTML = (data.mine && data.bundled)
+          ? (data.mine.length    ? `<optgroup label="My scenarios">${data.mine.map(opt).join("")}</optgroup>` : "")
+          + (data.bundled.length ? `<optgroup label="Bundled samples">${data.bundled.map(opt).join("")}</optgroup>` : "")
+          : data.scenarios.map(opt).join("");
         sel.onchange = () => loadScenarioDetail(sel.value);
       } catch {
         sel.innerHTML = '<option value="">Could not reach API</option>';
@@ -1013,7 +1031,7 @@
         const v = damageByRound[r];
         const h = Math.max(2, Math.round((v / max) * 100));
         return `
-          <div class="dmg-bar-wrap">
+          <div class="dmg-bar-wrap" title="Round ${r}: ${v.toFixed(1)} average damage">
             <span class="dmg-bar-value">${v.toFixed(0)}</span>
             <div class="dmg-bar" style="height:${h}%"></div>
             <span class="dmg-bar-label">R${r}</span>
@@ -1203,7 +1221,7 @@
         const { team, points } = byName[name];
         const color = colorFor(team);
         const pts = points.map(p => `${xFor(p.round)},${yFor(p.pct)}`).join(" ");
-        svg += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" opacity="0.9" />`;
+        svg += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" opacity="0.9"><title>${name}</title></polyline>`;
         legendItems.push({ name, color });
       });
       svg += `</svg>`;
@@ -1452,7 +1470,7 @@
         const v = counts[r];
         const h = Math.max(2, Math.round((v / max) * 100));
         return `
-          <div class="dmg-bar-wrap">
+          <div class="dmg-bar-wrap" title="${v} fight${v === 1 ? "" : "s"} lasted ${r} round${r === 1 ? "" : "s"}">
             <span class="dmg-bar-value">${v}</span>
             <div class="dmg-bar" style="height:${h}%;background:#6ab0e8;"></div>
             <span class="dmg-bar-label">${r}r</span>
@@ -1488,7 +1506,7 @@
         const h = Math.max(2, Math.round(t.winRate * 100));
         const isBaseline = t.label === "Baseline";
         return `
-          <div class="dmg-bar-wrap">
+          <div class="dmg-bar-wrap" title="${isBaseline ? "Scenario's own starting positions" : t.label + " (random starting positions)"}: ${pct(t.winRate, 0)} win rate">
             <span class="dmg-bar-value">${pct(t.winRate, 0)}</span>
             <div class="dmg-bar" style="height:${h}%;${isBaseline ? "background:#6ab0e8;" : ""}"></div>
             <span class="dmg-bar-label">${isBaseline ? "Base" : t.label.replace("Layout ", "L")}</span>

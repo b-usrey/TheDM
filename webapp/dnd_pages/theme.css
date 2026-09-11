@@ -1,0 +1,111 @@
+/* ──────────────────────────────────────────────────────────────────────
+   Combat Simulator shared theme
+   Linked from every dnd_pages/*.html. Every page still carries its own
+   :root block from before this file existed; the html:root selector here
+   is one step more specific, so these tokens win without editing them.
+   ────────────────────────────────────────────────────────────────────── */
+
+html:root {
+  --ink:        #1c1a17;
+  --parchment:  #e8e0d0;
+  /* The accent. Before this file --gold was defined as the parchment
+     colour itself, so nothing on any page had a colour that said "look
+     here". Titles, key numbers, chosen rows and primary actions all
+     already reference --gold, so restoring it lights them up together. */
+  --gold:       #d4a24e;
+  --gold-dim:   #b0a48f;
+  --accent-ink: #1c1a17;      /* text on a gold surface */
+  --crimson:    #7a3030;
+  --steel:      #3a3228;
+  --steel-mid:  #241f1a;
+  --steel-dark: #1c1a17;
+  --line:       #4a3728;
+  --text-muted: rgba(232,224,208,0.66);   /* hints; the old 0.45 was below comfortable contrast */
+  --glow:       rgba(0,0,0,0);
+  --glow-hot:   rgba(0,0,0,0);
+}
+
+/* ── Navigation ──────────────────────────────────────────────────────── */
+
+body nav a {
+  position: relative;
+  padding-bottom: 2px;
+  transition: color .15s;
+}
+body nav a[aria-current="page"] {
+  color: var(--gold);
+  border-bottom: 2px solid var(--gold);
+}
+
+/* ── Primary actions ─────────────────────────────────────────────────── */
+/* body-prefixed to outrank the pages' own .run-btn / .btn-primary rules. */
+
+body .run-btn,
+body .btn-primary,
+body .dnd-primary {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+body .run-btn:hover:not(:disabled),
+body .btn-primary:hover:not(:disabled),
+body .dnd-primary:hover:not(:disabled) {
+  background: #e0b463;
+  border-color: #e0b463;
+}
+body .run-btn:disabled,
+body .btn-primary:disabled {
+  background: var(--steel);
+  border-color: var(--line);
+  color: var(--gold-dim);
+  font-weight: 500;
+}
+
+/* ── Hints & muted copy ──────────────────────────────────────────────── */
+
+body .field-hint,
+body .hint,
+body .analyzer-empty,
+body .stat-subvalue {
+  color: var(--text-muted);
+}
+
+/* ── Selected / chosen states ────────────────────────────────────────── */
+
+body .trace-table tr.chosen td       { background: rgba(212,162,78,0.10); }
+body .qbar-row.chosen .qbar-fill     { background: var(--gold); }
+body .rating-badge                   { font-weight: 600; }
+
+/* ── Focus visibility (keyboard users) ───────────────────────────────── */
+
+body :focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* ── Collapsible deep-dive sections (used on the simulator) ─────────── */
+
+body details.dnd-section > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--line);
+  user-select: none;
+}
+body details.dnd-section > summary::-webkit-details-marker { display: none; }
+body details.dnd-section > summary::before {
+  content: "▸";
+  font-size: 0.8rem;
+  color: var(--gold-dim);
+}
+body details.dnd-section[open] > summary::before { content: "▾"; }
+body details.dnd-section > summary:hover { color: var(--gold); }
+body details.dnd-section > .dnd-section-body { padding: 0.25rem 0 1rem; }

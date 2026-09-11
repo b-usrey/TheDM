@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/dnd/theme.css" />
   <title>Scenario Builder — DnDPython</title>
   <style>
     :root {
@@ -86,7 +87,7 @@
     .board-wrap { overflow: auto; max-height: 640px; }
     .board { display: grid; gap: 1px; background: #14120f; border: 1px solid #4a3728; width: fit-content; user-select: none; }
     .cell {
-      width: 28px; height: 28px; background: #241f1a;
+      width: 32px; height: 32px; background: #241f1a;
       display: flex; align-items: center; justify-content: center;
       position: relative; cursor: pointer; font-size: 0.55rem;
     }
@@ -95,12 +96,15 @@
     .cell.armed-target { outline: 2px solid #6ab0e8; outline-offset: -2px; }
 
     .token {
-      width: 24px; height: 24px; border-radius: 50%;
+      width: 28px; height: 28px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-size: 0.58rem; font-weight: 700; color: #1c1a17; border: 2px solid transparent;
+      font-size: 0.66rem; font-weight: 700; color: #1c1a17; border: 2px solid transparent;
+      cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,0.5);
     }
+    .token:active { cursor: grabbing; }
     .token.blue { background: #6ab0e8; } .token.red { background: #e87070; }
-    .token.armed { border-color: var(--gold); box-shadow: 0 0 5px var(--gold); }
+    .token.armed { border-color: var(--gold); box-shadow: 0 0 6px var(--gold); }
+    .cell.drop-target { outline: 2px dashed var(--gold); outline-offset: -2px; background: #2f2820; }
 
     .placed-count { font-size: 0.78rem; color: rgba(232,224,208,0.55); margin-top: 0.5rem; }
     .placed-count.complete { color: #9cd6a0; }
@@ -120,13 +124,13 @@
         <a class="back-link" href="/dnd/simulator">Simulator</a>
         <a class="back-link" href="/dnd/analyzer">Position Analyzer</a>
         <a class="back-link" href="/dnd/dummy">Dummy Tester</a>
-        <a class="back-link" href="/dnd/scenario-builder">Scenario Builder</a>
+        <a class="back-link" aria-current="page" href="/dnd/scenario-builder">Scenario Builder</a>
         <a class="back-link" href="/dnd/scenarios">Scenarios</a>
         <a class="back-link" href="/dnd/monsters">Monsters</a>
         <a class="back-link" href="/dnd/classes">Classes</a>
         <a class="back-link" href="/app" style="margin-left:1.5rem;">Map Generator →</a>
       </nav>
-      <h1 class="sim-title">🗺️ Scenario Builder</h1>
+      <h1 class="sim-title">Scenario Builder</h1>
     </header>
 
     <div class="layout">
@@ -178,6 +182,7 @@
         </div>
         <p class="placed-count" id="placed-count"></p>
         <p id="board-error" class="error-msg hidden"></p>
+        <button class="btn" id="undo-btn" onclick="undo()" disabled title="Undo the last change (Ctrl+Z)">Undo</button>
         <button class="btn" onclick="autoPlaceRemaining()">Auto-Place Remaining</button>
         <button class="btn btn-primary" id="save-btn" onclick="saveScenario()" style="margin-left:0.5rem;">Save Scenario</button>
       </section>
@@ -212,6 +217,10 @@
     let monsterPositions = [];  // parallel array, one entry per flattened monster instance: [col,row] or null
     let paintMode = "place";
     let armed = null;           // {type:"player", name} or {type:"monster", index}
+    let dragging = null;        // occ being dragged between cells, or null
+    const UNDO_LIMIT = 50;
+    let undoStack = [];         // JSON snapshots of {draft, monsterPositions}
+    let lastSaved = null;       // snapshot of the last persisted state, pushed on the next save
 
     function loadDraft() {
       try {
@@ -231,12 +240,58 @@
       for (let i = 0; i < Math.min(savedPositions.length, totalMonsters); i++) {
         monsterPositions[i] = savedPositions[i];
       }
+      lastSaved = snapshot();   // baseline for undo; nothing to undo yet
+      undoStack = [];
     }
 
+    function snapshot() {
+      return JSON.stringify({ draft, monsterPositions });
+    }
+
+    // Every mutation in this page funnels through saveDraft(), so this is
+    // the one place undo needs to hook: push the state we're about to
+    // replace, then persist the new one.
     function saveDraft() {
+      if (lastSaved !== null) {
+        undoStack.push(lastSaved);
+        if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+      }
       draft._monsterPositions = monsterPositions;
       localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      lastSaved = snapshot();
+      updateUndoButton();
     }
+
+    function undo() {
+      if (!undoStack.length) return;
+      const prev = JSON.parse(undoStack.pop());
+      draft = prev.draft;
+      monsterPositions = prev.monsterPositions;
+      draft._monsterPositions = monsterPositions;
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      lastSaved = snapshot();
+      armed = null;
+      initSettingsFields();
+      renderParty();
+      renderMonsters();
+      renderBoard();
+      updateUndoButton();
+    }
+
+    function updateUndoButton() {
+      const b = document.getElementById("undo-btn");
+      if (!b) return;
+      b.disabled = undoStack.length === 0;
+      b.textContent = undoStack.length ? `Undo (${undoStack.length})` : "Undo";
+    }
+
+    document.addEventListener("keydown", e => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey) return;
+      const tag = (e.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;   // text fields keep native undo
+      e.preventDefault();
+      undo();
+    });
 
     // ── Scenario settings ──────────────────────────────────────────────
 
@@ -452,29 +507,77 @@
       }
       // "place" mode
       if (!armed) return;
-      if (rectListHas(draft.map.walls, col, row)) {
-        document.getElementById("board-error").textContent = "Can't place on a wall.";
-        document.getElementById("board-error").classList.remove("hidden");
-        return;
-      }
-      const occ = occupantAt(col, row);
-      if (occ) { return; }  // don't stack
+      if (placeOcc(armed, col, row)) armed = null;
+    }
 
-      if (armed.type === "player") {
-        draft.positions = draft.positions || {};
-        draft.positions[armed.name] = [col, row];
-      } else {
-        monsterPositions[armed.index] = [col, row];
+    // Shared by click-to-place and drag-and-drop. Returns true on success.
+    function placeOcc(occ, col, row) {
+      const err = document.getElementById("board-error");
+      if (rectListHas(draft.map.walls, col, row)) {
+        err.textContent = "Can't place on a wall.";
+        err.classList.remove("hidden");
+        return false;
       }
-      armed = null;
+      const existing = occupantAt(col, row);
+      if (existing && !sameOcc(existing, occ)) return false;   // don't stack
+      if (occ.type === "player") {
+        draft.positions = draft.positions || {};
+        draft.positions[occ.name] = [col, row];
+      } else {
+        monsterPositions[occ.index] = [col, row];
+      }
       saveDraft();
       renderParty();
       renderBoard();
+      return true;
     }
 
-    function tokenClicked(occ, ev) {
+    function sameOcc(a, b) {
+      return !!(a && b && a.type === b.type &&
+        (a.type === "player" ? a.name === b.name : a.index === b.index));
+    }
+
+    function attr(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    }
+
+    function tokenLabel(occ) {
+      if (occ.type === "player") return occ.name.slice(0, 2).toUpperCase();
+      // "GOBLIN #3" -> "G3". The old two-letter slice made every goblin
+      // read "GO", so tokens on the board were indistinguishable.
+      const m = /^(\S)\S*\s*#(\d+)/.exec(monsterLabelFor(occ.index));
+      return m ? `${m[1].toUpperCase()}${m[2]}` : "M";
+    }
+
+    function tokenClicked(el, ev) {
       ev.stopPropagation();
+      const occ = JSON.parse(el.dataset.occ);
       armSlot(occ.type, occ.type === "player" ? occ.name : occ.index);
+    }
+
+    // ── Drag-and-drop repositioning ────────────────────────────────────
+
+    function tokenDragStart(el, ev) {
+      dragging = JSON.parse(el.dataset.occ);
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", "token");   // Firefox won't start a drag without data
+      armed = null;
+    }
+    function cellDragOver(ev) {
+      if (!dragging) return;
+      ev.preventDefault();
+      ev.currentTarget.classList.add("drop-target");
+    }
+    function cellDragLeave(ev) {
+      ev.currentTarget.classList.remove("drop-target");
+    }
+    function cellDropped(col, row, ev) {
+      ev.preventDefault();
+      ev.currentTarget.classList.remove("drop-target");
+      if (!dragging) return;
+      const occ = dragging;
+      dragging = null;
+      placeOcc(occ, col, row);
     }
 
     function updatePlacedCount() {
@@ -494,7 +597,7 @@
       const { width, height } = draft.map;
       if (!width || !height) { wrap.innerHTML = '<p class="field-hint">Set a width/height first.</p>'; return; }
 
-      let html = `<div class="board" style="grid-template-columns: repeat(${width}, 28px);">`;
+      let html = `<div class="board" style="grid-template-columns: repeat(${width}, 32px);">`;
       for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
           const isWall = rectListHas(draft.map.walls, col, row);
@@ -507,16 +610,18 @@
 
           let inner = "";
           if (occ) {
-            const isArmed = armed && armed.type === occ.type &&
-              (occ.type === "player" ? armed.name === occ.name : armed.index === occ.index);
-            const label = occ.type === "player" ? occ.name.slice(0, 2).toUpperCase()
-                                                 : monsterLabelFor(occ.index).slice(0, 2).toUpperCase();
+            const isArmed = sameOcc(armed, occ);
             const team = occ.type === "player" ? "blue" : "red";
-            inner = `<div class="token ${team}${isArmed ? " armed" : ""}"
-                          title="${occ.type === "player" ? occ.name : monsterLabelFor(occ.index)}"
-                          onclick='tokenClicked(${JSON.stringify(occ)}, event)'>${label}</div>`;
+            const fullName = occ.type === "player" ? occ.name : monsterLabelFor(occ.index);
+            inner = `<div class="token ${team}${isArmed ? " armed" : ""}" draggable="true"
+                          data-occ="${attr(JSON.stringify(occ))}"
+                          title="${attr(fullName)} — drag to move, click to re-arm"
+                          ondragstart="tokenDragStart(this, event)"
+                          onclick="tokenClicked(this, event)">${tokenLabel(occ)}</div>`;
           }
-          html += `<div class="${classes.join(" ")}" onclick="cellClicked(${col},${row})">${inner}</div>`;
+          html += `<div class="${classes.join(" ")}" onclick="cellClicked(${col},${row})"
+                        ondragover="cellDragOver(event)" ondragleave="cellDragLeave(event)"
+                        ondrop="cellDropped(${col},${row},event)">${inner}</div>`;
         }
       }
       html += `</div>`;

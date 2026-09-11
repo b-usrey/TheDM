@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/dnd/theme.css" />
   <title>DnDPython — Character Builder</title>
   <style>
     :root {
@@ -254,7 +255,7 @@
 
 <nav>
   <a href="/dnd">Home</a>
-  <a href="/dnd/builder">Builder</a>
+  <a href="/dnd/builder" aria-current="page">Builder</a>
   <a href="/dnd/scenario-builder">Scenario Builder</a>
   <a href="/dnd/simulator">Simulator</a>
   <a href="/dnd/analyzer">Position Analyzer</a>
@@ -425,31 +426,28 @@
   <!-- STEP 6: Review & Export                                -->
   <!-- ══════════════════════════════════════════════════════ -->
   <div class="panel" id="step6">
-    <h2>VI · Review &amp; Export</h2>
-    <p class="hint">Download your scenario JSON to run with <code>python main.py sim your_scenario.json</code>. No server required.</p>
-    <div class="notice">The file will be saved to your Downloads folder. Open a terminal in this project and run the command above to simulate.</div>
-    <div class="json-box" id="jsonPreview"></div>
-    <div style="margin-top:1rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
-      <button class="btn btn-primary" onclick="downloadScenario()">&#8659; Download JSON</button>
-      <button class="btn" onclick="refreshPreview()">Refresh Preview</button>
+    <h2>VI · Review &amp; Save</h2>
+    <p class="hint">Your character is ready. Save it and run it straight away, or add it to a
+      multi-character encounter in the Scenario Builder.</p>
+    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center;">
+      <button class="btn btn-primary" onclick="runSim()">Save &amp; Open in Simulator</button>
+      <button class="btn" onclick="addToScenarioDraft()">+ Add to Scenario Builder</button>
+      <button class="btn btn-sm" onclick="validateChar()">Validate</button>
     </div>
+    <div id="apiStatus"></div>
 
-    <div class="api-section">
-      <h3>Optional: Validate &amp; Simulate via API</h3>
-      <p class="hint">Only needed if you want to run the simulation from this page. Requires <code>uvicorn api:app --reload</code> running locally.</p>
-      <div class="form-row">
-        <div class="form-group">
+    <details class="api-section" style="border-top:none; padding-top:0.5rem;">
+      <summary class="hint" style="cursor:pointer;">Advanced: scenario JSON, download, API endpoint</summary>
+      <div class="json-box" id="jsonPreview" style="margin-top:0.75rem;"></div>
+      <div style="margin-top:0.75rem; display:flex; gap:0.75rem; flex-wrap:wrap; align-items:flex-end;">
+        <button class="btn btn-sm" onclick="downloadScenario()">&#8659; Download JSON</button>
+        <button class="btn btn-sm" onclick="refreshPreview()">Refresh Preview</button>
+        <div class="form-group" style="margin:0 0 0 auto; min-width:200px;">
           <label for="apiUrl">API URL</label>
           <input type="text" id="apiUrl" value="/api/dnd" />
         </div>
-        <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem">
-          <button class="btn btn-sm" onclick="validateChar()">Validate Character</button>
-          <button class="btn btn-sm btn-primary" onclick="runSim()">Open in Simulator</button>
-          <button class="btn btn-sm" onclick="addToScenarioDraft()">+ Add to Scenario Builder</button>
-        </div>
       </div>
-      <div id="apiStatus"></div>
-    </div>
+    </details>
 
     <div class="api-section">
       <h3>Power Curve</h3>
@@ -713,8 +711,25 @@ const ITEMS_DATA = {
   ]
 };
 
-const MONSTERS  = ["GOBLIN","ORC","HOBGOBLIN","BUGBEAR"];
-const WEAPON_ROLES = ["melee","range","mixed"];
+// Fallback only -- replaced by the engine's full registry on load (see
+// loadMonsterList). Hardcoding these four was how the training scenarios
+// ended up built from the weakest monsters in the game.
+let MONSTERS = ["GOBLIN","ORC","HOBGOBLIN","BUGBEAR"];
+// Must match utils.scenarioLoader.VALID_WEAPON_ROLES in the engine -- the
+// old "range"/"mixed" spellings weren't recognised by any consumer and
+// silently meant "random".
+const WEAPON_ROLES = ["random","melee","ranged","all"];
+
+async function loadMonsterList() {
+  try {
+    const base = document.getElementById('apiUrl').value.replace(/\/$/, '');
+    const r = await fetch(`${base}/monsters`);
+    if (!r.ok) return;
+    const data = await r.json();
+    const names = (data.monsters || []).filter(m => !m.startsWith('TRAINING_DUMMY'));
+    if (names.length) MONSTERS = names;
+  } catch (e) { /* offline: keep the fallback list */ }
+}
 const STATS     = ["Str","Dex","Con","Int","Wis","Cha"];
 const SA_VALS   = [15,14,13,12,10,8];
 const PB_COST   = {8:0,9:1,10:2,11:3,12:4,13:5,14:7,15:9};
@@ -1350,7 +1365,7 @@ function addMonsterRow(type, count, role) {
     </div>
     <div class="form-group" style="margin:0">
       <label>Role</label>
-      <select id="mrole-${id}">${WEAPON_ROLES.map(r=>`<option value="${r}"${r===(role||'melee')?' selected':''}>${r}</option>`).join('')}</select>
+      <select id="mrole-${id}">${WEAPON_ROLES.map(r=>`<option value="${r}"${r===(role||'random')?' selected':''}>${r}</option>`).join('')}</select>
     </div>
     <div style="padding-top:1.4rem">
       <button class="btn btn-sm btn-danger" onclick="document.getElementById('mon-${id}').remove()">✕</button>
@@ -1532,8 +1547,13 @@ function addToScenarioDraft() {
   draft.players.push(player);
 
   localStorage.setItem(SCENARIO_DRAFT_KEY, JSON.stringify(draft));
-  el.textContent = `Added "${finalName}" -- opening Scenario Builder...`; el.className = 'ok';
-  window.location.href = '/dnd/scenario-builder';
+  // No auto-redirect: yanking the user off the page mid-flow made the
+  // Builder -> Scenario Builder seam feel like a bug. Tell them, link them.
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const total = draft.players.length;
+  el.innerHTML = `Added <b>${esc(finalName)}</b> to the encounter draft (${total} character${total === 1 ? '' : 's'} so far). `
+    + `<a href="/dnd/scenario-builder">Open Scenario Builder &rarr;</a> or keep going and build another.`;
+  el.className = 'ok';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1817,9 +1837,11 @@ async function compareToSnapshot() {
 // ═══════════════════════════════════════════════════════════════
 
 initRaceGrid();
-addMonsterRow();
 renderStatTable();
 renderDvdChecks();
+// The default encounter row is built from MONSTERS, so wait for the full
+// registry before creating it (falls back to the built-in list if offline).
+loadMonsterList().finally(() => addMonsterRow());
 </script>
 </body>
 </html>

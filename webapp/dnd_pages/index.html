@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/dnd/theme.css" />
 <title>Combat Sim — DnDPython</title>
 <style>
   :root {
@@ -27,7 +28,7 @@
     padding: 2rem;
   }
   .page {
-    max-width: 640px;
+    max-width: 760px;
     width: 100%;
   }
   h1 {
@@ -72,6 +73,26 @@
     color: var(--parchment);
     opacity: 0.75;
   }
+  .flow {
+    font-size: 0.9rem;
+    color: var(--gold-dim);
+    margin: -1.5rem 0 2rem;
+  }
+  .group { margin-bottom: 1.75rem; }
+  .group h2 {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid #4a3728;
+  }
+  .links.three { grid-template-columns: 1fr 1fr 1fr; }
+  .links a.wide { grid-column: 1 / -1; }
+  @media (max-width: 560px) {
+    .links, .links.three { grid-template-columns: 1fr; }
+  }
   .back {
     display: inline-block;
     margin-top: 2.5rem;
@@ -85,43 +106,66 @@
 </head>
 <body>
 <div class="page">
-  <h1>⚔️ Combat Simulator</h1>
+  <h1>Combat Simulator</h1>
   <p class="subtitle">D&D 5e encounter simulation, powered by DnDPython</p>
 
-  <div class="links">
-    <a href="/dnd/builder">
-      <span class="name">Builder</span>
-      <span class="desc">Create a character and assemble a scenario</span>
-    </a>
-    <a href="/dnd/scenario-builder">
-      <span class="name">Scenario Builder</span>
-      <span class="desc">Define the map, place creatures and obstacles, all in the browser</span>
-    </a>
-    <a href="/dnd/simulator">
-      <span class="name">Simulator</span>
-      <span class="desc">Run a scenario and see the results</span>
-    </a>
-    <a href="/dnd/analyzer">
-      <span class="name">Position Analyzer</span>
-      <span class="desc">Place units on the board and see win probability</span>
-    </a>
-    <a href="/dnd/dummy">
-      <span class="name">Dummy Tester</span>
-      <span class="desc">Test one character's damage output against different defenses</span>
-    </a>
-    <a href="/dnd/scenarios">
-      <span class="name">Scenarios</span>
-      <span class="desc">Browse saved and sample scenarios</span>
-    </a>
-    <a href="/dnd/monsters">
-      <span class="name">Monsters</span>
-      <span class="desc">Browse monster stat blocks</span>
-    </a>
-    <a href="/dnd/classes" style="grid-column: 1 / -1;">
-      <span class="name">Classes</span>
-      <span class="desc">Reference for classes, subclasses and features</span>
-    </a>
-  </div>
+  <p class="flow">Build a character &rarr; assemble an encounter &rarr; simulate it &rarr; dig into why it went the way it did.</p>
+
+  <section class="group">
+    <h2>1 &middot; Create</h2>
+    <div class="links">
+      <a href="/dnd/builder">
+        <span class="name">Character Builder</span>
+        <span class="desc">Step-by-step: race, class, level journey, stats, gear</span>
+      </a>
+      <a href="/dnd/scenario-builder">
+        <span class="name">Scenario Builder</span>
+        <span class="desc">Draw the map, add monster groups, place every token</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>2 &middot; Run</h2>
+    <div class="links">
+      <a href="/dnd/simulator" class="wide">
+        <span class="name">Combat Simulator</span>
+        <span class="desc">Run an encounter many times: win rates, risk profile, per-character analysis, and a turn-by-turn decision trace</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>3 &middot; Analyze</h2>
+    <div class="links">
+      <a href="/dnd/analyzer">
+        <span class="name">Position Analyzer</span>
+        <span class="desc">Move units on the board and watch the win probability shift</span>
+      </a>
+      <a href="/dnd/dummy">
+        <span class="name">Dummy Tester</span>
+        <span class="desc">One character's damage output against AC 12 / 15 / 18 / 21</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>Reference</h2>
+    <div class="links three">
+      <a href="/dnd/scenarios">
+        <span class="name">Scenarios</span>
+        <span class="desc">Your saved encounters and the bundled samples</span>
+      </a>
+      <a href="/dnd/monsters">
+        <span class="name">Monsters</span>
+        <span class="desc">Stat blocks for everything the simulator knows</span>
+      </a>
+      <a href="/dnd/classes">
+        <span class="name">Classes</span>
+        <span class="desc">Classes, subclasses and features</span>
+      </a>
+    </div>
+  </section>
 
   <a class="back" href="/app">← Back to Map Generator</a>
 </div>

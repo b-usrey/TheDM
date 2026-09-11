@@ -38,7 +38,7 @@ from data.monsters.monsters import MONSTER_REGISTRY
 from utils.combat_logger import CombatLogger
 from utils.creatureFactory import CreatureFactory
 from utils.encounter_builder import build_encounter, score_encounter
-from utils.scenarioLoader import ScenarioLoader, build_map, place_creatures
+from utils.scenarioLoader import ScenarioLoader, apply_weapon_roles, build_map, place_creatures
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DND_ROOT = os.path.abspath(os.path.join(_HERE, "..", "dndpython"))
@@ -114,30 +114,9 @@ def _run_episode(scenario_data, silent=True, strategy=None, overrides=None, trac
         loader = ScenarioLoader(factory, event)
         players, monsters = loader.load(scenario_data)
 
-        monster_idx = 0
-        for tmpl in scenario_data.get("monsters", []):
-            mtype = tmpl.get("type", "").upper()
-            count = tmpl.get("count", 1)
-            role = tmpl.get("weapon_role", "random")
-            if mtype not in MONSTER_REGISTRY:
-                monster_idx += count
-                continue
-            all_attacks = MONSTER_REGISTRY[mtype].get("attacks", [])
-            melee_attacks = [a for a in all_attacks if a.get("attack_type", "melee") == "melee"]
-            ranged_attacks = [a for a in all_attacks if a.get("attack_type", "melee") != "melee"]
-            for _ in range(count):
-                if monster_idx >= len(monsters):
-                    break
-                m = monsters[monster_idx]
-                if role == "all":
-                    m._attack_templates = all_attacks
-                elif role == "melee":
-                    m._attack_templates = melee_attacks or all_attacks
-                elif role == "ranged":
-                    m._attack_templates = ranged_attacks or all_attacks
-                else:
-                    m._attack_templates = _random.choice([melee_attacks, ranged_attacks]) or all_attacks
-                monster_idx += 1
+        # weapon_role semantics live in the engine's apply_weapon_roles so
+        # the simulator, the CLI and training all fight the same scenario.
+        apply_weapon_roles(scenario_data, monsters)
 
         battle_map = build_map(scenario_data)
         place_creatures(scenario_data, players, monsters, battle_map)
@@ -642,11 +621,17 @@ def register_dnd_routes(app, user_dir):
     @app.route("/api/dnd/scenarios")
     def api_dnd_list_scenarios():
         username = session["username"]
-        names = set()
+        mine = {f for f in os.listdir(_user_scenarios_dir(username)) if f.endswith(".json")}
+        bundled = set()
         if os.path.isdir(BUNDLED_SCENARIOS_DIR):
-            names.update(f for f in os.listdir(BUNDLED_SCENARIOS_DIR) if f.endswith(".json"))
-        names.update(f for f in os.listdir(_user_scenarios_dir(username)) if f.endswith(".json"))
-        return jsonify({"scenarios": sorted(names)})
+            bundled = {f for f in os.listdir(BUNDLED_SCENARIOS_DIR) if f.endswith(".json")}
+        # A user file of the same name shadows the bundled one (see
+        # _find_scenario_path), so list it under "mine" only.
+        return jsonify({
+            "scenarios": sorted(mine | bundled),       # flat list, kept for older callers
+            "mine":      sorted(mine),
+            "bundled":   sorted(bundled - mine),
+        })
 
     @app.route("/api/dnd/scenarios/<filename>")
     def api_dnd_get_scenario(filename):
@@ -895,6 +880,10 @@ def register_dnd_routes(app, user_dir):
     @app.route("/dnd")
     def dnd_landing():
         return send_from_directory(PAGES_DIR, "index.html")
+
+    @app.route("/dnd/theme.css")
+    def dnd_theme():
+        return send_from_directory(PAGES_DIR, "theme.css", mimetype="text/css")
 
     @app.route("/dnd/<page>")
     def dnd_page(page):
