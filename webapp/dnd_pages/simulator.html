@@ -389,6 +389,136 @@
       margin-bottom: 1rem;
     }
 
+    /* ── Decision trace ─────────────────────────────────────────────── */
+    .trace-transport {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .trace-btn {
+      background: #3a3228;
+      border: 1px solid #4a3728;
+      border-radius: 4px;
+      color: var(--parchment);
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 0.35rem 0.7rem;
+      min-width: 2.4rem;
+    }
+    .trace-btn:hover:not(:disabled) { background: #4a3f30; }
+    .trace-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .trace-scrubber { flex: 1; min-width: 160px; accent-color: #6a5138; }
+    .trace-position {
+      font-size: 0.78rem;
+      color: var(--gold-dim);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .trace-filter {
+      background: #1c1a17;
+      border: 1px solid #4a3728;
+      border-radius: 4px;
+      color: var(--parchment);
+      font-size: 0.8rem;
+      padding: 0.3rem 0.45rem;
+    }
+
+    .trace-card {
+      background: #1c1a17;
+      border: 1px solid #4a3728;
+      border-left: 3px solid var(--gold-dim);
+      padding: 1rem 1.25rem;
+    }
+    .trace-card.team-blue-card { border-left-color: #6ab0e8; }
+    .trace-card.team-red-card  { border-left-color: #e87070; }
+    .trace-head {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.35rem;
+    }
+    .trace-name { font-size: 1.05rem; font-weight: 600; color: var(--gold); }
+    .trace-meta { font-size: 0.78rem; color: var(--gold-dim); }
+    .trace-outcome {
+      font-size: 0.88rem;
+      color: rgba(232,224,208,0.8);
+      font-style: italic;
+      padding: 0.5rem 0.75rem;
+      background: #241f1a;
+      border-left: 2px solid var(--gold-dim);
+      margin-bottom: 1rem;
+    }
+
+    .trace-stages {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+    .trace-stage {
+      background: #241f1a;
+      border: 1px solid #33291f;
+      border-radius: 4px;
+      padding: 0.75rem 0.85rem;
+    }
+    .trace-stage-title {
+      font-size: 0.66rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid #33291f;
+    }
+    .trace-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .trace-table th {
+      font-size: 0.6rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--gold-dim);
+      text-align: right;
+      padding: 0.2rem 0.3rem;
+      font-weight: 500;
+    }
+    .trace-table th:first-child, .trace-table td:first-child { text-align: left; }
+    .trace-table td {
+      padding: 0.22rem 0.3rem;
+      text-align: right;
+      color: rgba(232,224,208,0.6);
+      border-top: 1px solid #33291f;
+    }
+    .trace-table tr.chosen td {
+      color: var(--gold);
+      font-weight: 600;
+      background: rgba(176,164,143,0.09);
+    }
+    .trace-chosen-mark { color: var(--gold); }
+    .trace-out-of-range { opacity: 0.45; }
+
+    .qbar-row {
+      display: grid;
+      grid-template-columns: 5.5rem 1fr 2.6rem;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.76rem;
+      margin-bottom: 0.3rem;
+      color: rgba(232,224,208,0.6);
+    }
+    .qbar-row.chosen { color: var(--gold); font-weight: 600; }
+    .qbar-track {
+      background: #1c1a17;
+      border: 1px solid #33291f;
+      height: 9px;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    .qbar-fill { height: 100%; background: var(--gold-dim); }
+    .qbar-row.chosen .qbar-fill { background: #e8ab6a; }
+    .trace-kv { font-size: 0.8rem; color: rgba(232,224,208,0.7); margin-bottom: 0.25rem; }
+    .trace-kv span { color: var(--gold); }
+
     .char-subtitle {
       font-size: 0.68rem;
       letter-spacing: 0.05em;
@@ -579,6 +709,15 @@
           <span class="field-hint">Tweak monster counts/roles and re-run without editing the saved scenario -- use "Save Changes" to keep the tweak.</span>
         </div>
 
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:0.45rem;text-transform:none;cursor:pointer;">
+            <input type="checkbox" id="trace-checkbox" />
+            <span style="font-size:0.8rem;letter-spacing:0;">Record decision trace</span>
+          </label>
+          <span class="field-hint">Captures every option each creature weighed on its turn, so you can step
+            through why it chose what it did. Recorded for the sample episode only.</span>
+        </div>
+
         <button class="run-btn" id="run-btn" onclick="runSim()">Roll Initiative</button>
         <p id="sim-error" class="error-msg hidden"></p>
       </aside>
@@ -656,6 +795,24 @@
           <div class="analyzer-section">
             <p class="panel-title" style="border:none;margin-bottom:0.75rem;">HP Over Time (sample episode)</p>
             <div id="hp-timeline"></div>
+          </div>
+
+          <div class="analyzer-section hidden" id="trace-section">
+            <p class="panel-title" style="border:none;margin-bottom:0.75rem;">Decision Trace (sample episode)</p>
+            <div class="trace-transport">
+              <button class="trace-btn" id="trace-first" onclick="traceGoto(0)" title="First turn">⏮</button>
+              <button class="trace-btn" id="trace-prev" onclick="traceStep(-1)" title="Previous turn">◀</button>
+              <button class="trace-btn" id="trace-play" onclick="traceTogglePlay()" title="Play/pause">▶</button>
+              <button class="trace-btn" id="trace-next" onclick="traceStep(1)" title="Next turn">▶❚</button>
+              <button class="trace-btn" id="trace-last" onclick="traceGoto(-1)" title="Last turn">⏭</button>
+              <input type="range" class="trace-scrubber" id="trace-scrubber" min="0" max="0" value="0"
+                     oninput="traceGoto(parseInt(this.value))" />
+              <span class="trace-position" id="trace-position">—</span>
+              <select class="trace-filter" id="trace-filter" onchange="applyTraceFilter()">
+                <option value="">All creatures</option>
+              </select>
+            </div>
+            <div id="trace-card"></div>
           </div>
 
           <table class="creature-table">
@@ -1058,6 +1215,212 @@
       el.innerHTML = `<div class="hp-timeline-wrap">${svg}</div><div class="hp-timeline-legend">${legend}</div>`;
     }
 
+    // ── Decision trace ────────────────────────────────────────────────
+
+    let traceAll      = [];    // every decision record from the sample episode
+    let traceShown    = [];    // after the creature filter
+    let traceIndex    = 0;
+    let tracePlaying  = false;
+    let traceTimer    = null;
+
+    const TRACE_PLAY_MS = 1400;
+
+    function loadTrace(events) {
+      traceAll = (events || []).filter(e => e.type === "decision");
+      const section = document.getElementById("trace-section");
+      if (!traceAll.length) {
+        section.classList.add("hidden");
+        tracePause();
+        return;
+      }
+      section.classList.remove("hidden");
+
+      const filter = document.getElementById("trace-filter");
+      const names  = [...new Set(traceAll.map(d => d.creature))];
+      const prev   = filter.value;
+      filter.innerHTML = '<option value="">All creatures</option>'
+        + names.map(n => `<option value="${n}">${n}</option>`).join("");
+      if (names.includes(prev)) filter.value = prev;
+
+      applyTraceFilter();
+    }
+
+    function applyTraceFilter() {
+      tracePause();   // otherwise playback keeps running against the old list
+      const who = document.getElementById("trace-filter").value;
+      traceShown = who ? traceAll.filter(d => d.creature === who) : traceAll;
+      traceIndex = 0;
+      const scrubber = document.getElementById("trace-scrubber");
+      scrubber.max   = Math.max(0, traceShown.length - 1);
+      scrubber.value = 0;
+      renderTrace();
+    }
+
+    function traceGoto(i) {
+      if (!traceShown.length) return;
+      if (i < 0) i = traceShown.length - 1;
+      traceIndex = Math.max(0, Math.min(i, traceShown.length - 1));
+      document.getElementById("trace-scrubber").value = traceIndex;
+      renderTrace();
+    }
+
+    function traceStep(delta) {
+      traceGoto(traceIndex + delta);
+    }
+
+    function tracePause() {
+      tracePlaying = false;
+      if (traceTimer) { clearInterval(traceTimer); traceTimer = null; }
+      const btn = document.getElementById("trace-play");
+      if (btn) btn.textContent = "▶";
+    }
+
+    function traceTogglePlay() {
+      if (tracePlaying) { tracePause(); return; }
+      if (!traceShown.length) return;
+      // Restart from the top if we're sitting on the last turn.
+      if (traceIndex >= traceShown.length - 1) traceGoto(0);
+      tracePlaying = true;
+      document.getElementById("trace-play").textContent = "❚❚";
+      traceTimer = setInterval(() => {
+        if (traceIndex >= traceShown.length - 1) { tracePause(); return; }
+        traceStep(1);
+      }, TRACE_PLAY_MS);
+    }
+
+    function traceTargetStage(stage) {
+      if (!stage) return "";
+      const hasThreat = stage.candidates.some(c => c.effective_danger !== undefined);
+      const rows = stage.candidates.map(c => `
+        <tr class="${c.name === stage.chosen ? "chosen" : ""}">
+          <td>${c.name === stage.chosen ? '<span class="trace-chosen-mark">▸</span> ' : ""}${c.name}</td>
+          <td>${c.hp}/${c.max_hp}</td>
+          <td>${c.distance_ft ?? "—"}ft</td>
+          ${hasThreat ? `<td>${c.effective_danger ?? "—"}</td>` : ""}
+        </tr>`).join("");
+      return `
+        <div class="trace-stage">
+          <div class="trace-stage-title">1 · Target &mdash; ${stage.basis.replace(/_/g, " ")}</div>
+          <table class="trace-table">
+            <thead><tr><th>Enemy</th><th>HP</th><th>Dist</th>${hasThreat ? "<th>Danger</th>" : ""}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function traceWeaponStage(stage) {
+      if (!stage) return "";
+      const rows = stage.candidates.map(c => `
+        <tr class="${c.name === stage.chosen ? "chosen" : ""} ${c.in_range ? "" : "trace-out-of-range"}">
+          <td>${c.name === stage.chosen ? '<span class="trace-chosen-mark">▸</span> ' : ""}${c.name}</td>
+          <td>${c.is_ranged ? `ranged ${c.normal_range}ft` : "melee"}</td>
+          <td>${pct(c.p_hit, 0)}</td>
+          <td>${c.score.toFixed(1)}</td>
+          <td>${c.in_range ? "✓" : "✕"}</td>
+        </tr>`).join("");
+      return `
+        <div class="trace-stage">
+          <div class="trace-stage-title">2 · Weapon &mdash; expected damage</div>
+          <table class="trace-table">
+            <thead><tr><th>Option</th><th>Type</th><th>Hit%</th><th>Score</th><th>In range</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function traceStrategyStage(stage) {
+      if (!stage) return "";
+      let body;
+      if (stage.q_values) {
+        const vals = Object.values(stage.q_values);
+        const lo   = Math.min(...vals), hi = Math.max(...vals);
+        const span = (hi - lo) || 1;
+        body = Object.entries(stage.q_values).map(([name, v]) => `
+          <div class="qbar-row ${name === stage.chosen ? "chosen" : ""}">
+            <span>${name}</span>
+            <span class="qbar-track"><span class="qbar-fill" style="width:${((v - lo) / span) * 100}%"></span></span>
+            <span>${v.toFixed(2)}</span>
+          </div>`).join("");
+      } else if (stage.chosen) {
+        body = `<div class="trace-kv">Chose <span>${stage.chosen}</span> (this selector doesn't score the alternatives)</div>`;
+      } else {
+        body = `<div class="trace-kv">No strategy layer &mdash; the hand-written rules decided this turn.</div>`;
+      }
+      return `
+        <div class="trace-stage">
+          <div class="trace-stage-title">3 · Strategy &mdash; ${stage.source}</div>
+          ${body}
+        </div>`;
+    }
+
+    function traceMovementStage(stage) {
+      if (!stage) return "";
+      const kv = [];
+      kv.push(`Action: <span>${stage.action}</span>`);
+      if (stage.trigger) kv.push(`Because: <span>${stage.trigger}</span>`);
+      if (stage.distance_before !== undefined) {
+        kv.push(`Distance: <span>${stage.distance_before ?? "—"}ft → ${stage.distance_after ?? "—"}ft</span>`);
+      }
+      if (stage.away_from) kv.push(`Away from: <span>${stage.away_from}</span>`);
+      if (stage.hp_pct !== undefined) {
+        kv.push(`HP <span>${pct(stage.hp_pct, 0)}</span> vs threshold <span>${pct(stage.threshold_pct, 0)}</span>`);
+      }
+      if (stage.steps !== undefined) kv.push(`Steps: <span>${stage.steps}</span>`);
+      return `
+        <div class="trace-stage">
+          <div class="trace-stage-title">4 · Movement</div>
+          ${kv.map(k => `<div class="trace-kv">${k}</div>`).join("")}
+        </div>`;
+    }
+
+    function renderTrace() {
+      const el = document.getElementById("trace-card");
+      const posEl = document.getElementById("trace-position");
+      if (!traceShown.length) {
+        el.innerHTML = '<p class="analyzer-empty">No decisions recorded for this creature.</p>';
+        posEl.textContent = "—";
+        return;
+      }
+      const d = traceShown[traceIndex];
+      posEl.textContent = `Turn ${traceIndex + 1} / ${traceShown.length} · Round ${d.round}`;
+
+      ["trace-first", "trace-prev"].forEach(id =>
+        document.getElementById(id).disabled = traceIndex === 0);
+      ["trace-next", "trace-last"].forEach(id =>
+        document.getElementById(id).disabled = traceIndex === traceShown.length - 1);
+
+      const o = d.outcome || {};
+      let outcome;
+      if (o.skip) {
+        outcome = "Skipped this turn — " + (o.reason || "no action available");
+      } else {
+        const bits = [];
+        bits.push(o.weapon ? `attacks <b>${o.target}</b> with <b>${o.weapon}</b>`
+                           : `closes on <b>${o.target}</b> without attacking`);
+        if (o.steps)     bits.push(`moves ${o.steps} square${o.steps === 1 ? "" : "s"}`);
+        if (o.use_dash)  bits.push("dashes");
+        if (o.use_dodge) bits.push("dodges");
+        outcome = bits.join(" · ") + (o.reason ? ` — ${o.reason}` : "");
+      }
+
+      el.innerHTML = `
+        <div class="trace-card team-${d.team}-card">
+          <div class="trace-head">
+            <span class="trace-name">${d.creature}</span>
+            <span class="trace-meta team-${d.team}">${d.team}</span>
+            <span class="trace-meta">${d.hp}/${d.max_hp} HP</span>
+            <span class="trace-meta">round ${d.round}</span>
+          </div>
+          <div class="trace-outcome">${outcome}</div>
+          <div class="trace-stages">
+            ${traceTargetStage(d.target)}
+            ${traceWeaponStage(d.weapon)}
+            ${traceStrategyStage(d.strategy)}
+            ${traceMovementStage(d.movement)}
+          </div>
+        </div>`;
+    }
+
     function renderOutcomeBreakdown(breakdown, n) {
       if (!breakdown || !n) return '<p class="analyzer-empty">No outcome data for this run.</p>';
       const parts = [
@@ -1329,7 +1692,12 @@
         const res = await fetch(`${API_URL}/simulate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scenario: currentScenario, episodes, silent: true })
+          body: JSON.stringify({
+            scenario: currentScenario,
+            episodes,
+            silent: true,
+            trace: document.getElementById("trace-checkbox").checked,
+          })
         });
         if (!res.ok) {
           const err = await res.json();
@@ -1407,6 +1775,8 @@
         // ── Per-character analyzer ────────────────────────────────────────
         renderCharacterAnalyzer(data.character_stats, data.resource_usage, data.avg_rounds);
         renderHpTimeline(data.sample_events);
+        tracePause();
+        loadTrace(data.sample_events);
 
         // ── Sample-episode snapshot ───────────────────────────────────────
         document.getElementById("res-outcome").textContent = data.sample_outcome;

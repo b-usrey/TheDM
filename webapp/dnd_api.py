@@ -104,7 +104,7 @@ def _apply_board_overrides(all_creatures, battle_map, overrides):
             creature.add_condition(str(cond))
 
 
-def _run_episode(scenario_data, silent=True, strategy=None, overrides=None):
+def _run_episode(scenario_data, silent=True, strategy=None, overrides=None, trace=False):
     captured = io.StringIO()
     ctx = contextlib.redirect_stdout(captured) if silent else contextlib.nullcontext()
 
@@ -146,6 +146,10 @@ def _run_episode(scenario_data, silent=True, strategy=None, overrides=None):
         initiative = InitiativeManager(players + monsters, event)
         max_rounds = scenario_data.get("max_rounds", 100)
         cm = CombatManager(event, initiative, battle_map, max_rounds=max_rounds)
+        # Decision tracing records every rejected option at every decision
+        # point, so it's only ever switched on for the one episode whose
+        # events get returned to the UI -- see api_dnd_simulate.
+        cm.ai.trace_enabled = bool(trace)
         if strategy:
             from core.ml_strategy import Strategy as StrategyEnum
             try:
@@ -810,9 +814,14 @@ def register_dnd_routes(app, user_dir):
         all_events = []
         outcome_breakdown = {"clean_win": 0, "costly_win": 0, "tpk": 0, "other_loss": 0}
         last = {}
+        trace = bool(body.get("trace", False))
         try:
-            for _ in range(n):
-                last = _run_episode(scenario_data, silent=silent, strategy=strategy, overrides=overrides)
+            for i in range(n):
+                # Only the final episode is traced: it's the one whose events
+                # come back as sample_events, and tracing every episode would
+                # multiply the response size by the candidate tables for no gain.
+                last = _run_episode(scenario_data, silent=silent, strategy=strategy,
+                                    overrides=overrides, trace=trace and i == n - 1)
                 winner = last["winner"] or "none"
                 wins[winner] += 1
                 total_rounds += last["rounds"]
